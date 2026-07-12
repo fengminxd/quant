@@ -1,0 +1,7 @@
+httpx
+matplotlib
+mplfinance
+numpy
+pandas
+psycopg[binary]
+websockets

@@ -1,0 +1,24 @@
+[project]
+name = "price-action-quant-framework"
+version = "0.1.0"
+description = "Price action quant research framework skeleton"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx",
+    "matplotlib",
+    "mplfinance",
+    "numpy",
+    "pandas",
+    "psycopg[binary]",
+    "websockets",
+]
+
+[project.scripts]
+market-data-collector = "data.run_collector:main"
+
+[tool.setuptools.packages.find]
+include = ["core*", "data*", "factors*", "features*", "indicators*", "patterns*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

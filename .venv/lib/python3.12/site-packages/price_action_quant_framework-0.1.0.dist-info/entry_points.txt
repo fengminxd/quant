@@ -1,0 +1,2 @@
+[console_scripts]
+market-data-collector = data.run_collector:main

@@ -1,0 +1,6 @@
+{
+  "url_env": "https://auwzcnecotwvamayuwxo.supabase.co",
+  "service_key_env": "sb_secret_vG_VsDhEGL2Nbxe_QU7sKg_PovxOmbl",
+  "db_url": "postgresql://postgres:Vanlulu.168169@db.auwzcnecotwvamayuwxo.supabase.co:5432/postgres",
+  "table": "ohlcv_candles"
+}

@@ -1,0 +1,6 @@
+core
+data
+factors
+features
+indicators
+patterns

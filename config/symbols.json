@@ -1,0 +1,29 @@
+{
+  "default_quote_asset": "USDT",
+  "timeframes": ["15m", "1h", "4h"],
+  "history_limit": 2000,
+  "symbols": [
+    {"name": "BTC", "exchange_symbol": "BTCUSDT", "enabled": true},
+    {"name": "ETH", "exchange_symbol": "ETHUSDT", "enabled": true},
+    {"name": "HYPE", "exchange_symbol": "HYPEUSDT", "enabled": true},
+    {"name": "XAU", "exchange_symbol": "XAUUSDT", "enabled": true},
+    {"name": "XAG", "exchange_symbol": "XAGUSDT", "enabled": true},
+    {"name": "CL", "exchange_symbol": "CLUSDT", "enabled": true},
+    {"name": "SPCX", "exchange_symbol": "SPCXUSDT", "enabled": true},
+    {"name": "MU", "exchange_symbol": "MUUSDT", "enabled": true},
+    {"name": "SNDK", "exchange_symbol": "SNDKUSDT", "enabled": true},
+    {"name": "SKHYNIX", "exchange_symbol": "SKHYNIXUSDT", "enabled": true},
+    {"name": "NVDA", "exchange_symbol": "NVDAUSDT", "enabled": true},
+    {"name": "DRAM", "exchange_symbol": "DRAMUSDT", "enabled": true},
+    {"name": "SOXL", "exchange_symbol": "SOXLUSDT", "enabled": true},
+    {"name": "KORU", "exchange_symbol": "KORUUSDT", "enabled": true},
+    {"name": "BNB", "exchange_symbol": "BNBUSDT", "enabled": true},
+    {"name": "SUI", "exchange_symbol": "SUIUSDT", "enabled": true},
+    {"name": "ZEC", "exchange_symbol": "ZECUSDT", "enabled": true},
+    {"name": "DOGE", "exchange_symbol": "DOGEUSDT", "enabled": true},
+    {"name": "NEAR", "exchange_symbol": "NEARUSDT", "enabled": true},
+    {"name": "AAVE", "exchange_symbol": "AAVEUSDT", "enabled": true},
+    {"name": "XRP", "exchange_symbol": "XRPUSDT", "enabled": true},
+    {"name": "TAO", "exchange_symbol": "TAOUSDT", "enabled": true}
+  ]
+}

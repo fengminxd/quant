@@ -1,0 +1,22 @@
+2026-07-07 12:22:21,693 WARNING data.binance_futures: skipping XAUUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping XAGUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping CLUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping SPCXUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping MUUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping SNDKUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping SKHYNIXUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping NVDAUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping DRAMUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping SOXLUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:21,694 WARNING data.binance_futures: skipping KORUUSDT: not a trading USDT-margined perpetual contract
+2026-07-07 12:22:22,992 INFO data.market_data_service: backfilled 1 candles for BTC 15m
+2026-07-07 12:22:25,514 INFO data.market_data_service: backfilled 1 candles for ETH 15m
+2026-07-07 12:22:28,454 INFO data.market_data_service: backfilled 1 candles for HYPE 15m
+2026-07-07 12:22:31,262 INFO data.market_data_service: backfilled 1 candles for BNB 15m
+2026-07-07 12:22:33,541 INFO data.market_data_service: backfilled 1 candles for SUI 15m
+2026-07-07 12:22:35,519 INFO data.market_data_service: backfilled 1 candles for ZEC 15m
+2026-07-07 12:22:37,784 INFO data.market_data_service: backfilled 1 candles for DOGE 15m
+2026-07-07 12:22:40,389 INFO data.market_data_service: backfilled 1 candles for NEAR 15m
+2026-07-07 12:22:42,851 INFO data.market_data_service: backfilled 1 candles for AAVE 15m
+2026-07-07 12:22:44,937 INFO data.market_data_service: backfilled 1 candles for XRP 15m
+2026-07-07 12:22:47,733 INFO data.market_data_service: backfilled 1 candles for TAO 15m
