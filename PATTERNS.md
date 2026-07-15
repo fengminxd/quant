@@ -75,53 +75,133 @@ patterns/trendline_support.py
 
 ------------------------------------------------------------------------
 
-# PATTERN_002 Ascending Triangle
+# PATTERN_002 Triangle
 
 ## Market Logic
 
-Buyers raise lows while sellers defend one resistance.
+Swing highs and lows form two inward boundaries as price acceptance narrows.
+The upper boundary may be horizontal or descending; the lower boundary may be
+horizontal or rising. The structure is direction neutral until price closes
+outside either projected boundary.
 
 ## Geometry
 
--   Flat resistance
--   Rising swing lows
+-   At least 3 confirmed swing highs on the fitted upper boundary
+-   At least 3 confirmed swing lows on the fitted lower boundary
+-   Upper slope is horizontal or negative
+-   Lower slope is horizontal or positive
+-   The two fitted boundaries overlap for at least 5 bars
+-   Boundary distance contracts by at least 5%
+-   Parallel horizontal boxes and diverging boundaries are rejected
 
 ## Detection Rules
 
--   High deviation \< 0.3 ATR
-
--   =3 higher lows
-
--   ATR compression
-
--   Volume contraction
-
--   Breakout volume \> MA20
+-   Evaluate all 3-point combinations among the latest 8 confirmed highs/lows.
+-   Each boundary spans at least 5 complete bar intervals.
+-   Boundary regression RMSE must be no more than 0.5 ATR.
+-   A normalized slope within +/-0.02 ATR per bar is treated as horizontal.
+-   No confirmed swing may violate a fitted boundary beyond the fit tolerance.
+-   Prefer the longest overlapping boundary span, then stronger convergence and fit.
+-   Score upside breakouts and downside breakdowns symmetrically.
 
 ## Required Features
 
--   resistance_flatness
--   higher_low_score
+-   upper_slope_atr_per_bar
+-   lower_slope_atr_per_bar
+-   upper_fit_error_atr
+-   lower_fit_error_atr
+-   boundary_direction_score
+-   boundary_fit_score
+-   convergence_ratio
+-   convergence_score
+-   overlap_span
 -   atr_compression
 -   volume_contraction
 -   breakout_strength
+-   upside_breakout_strength
+-   downside_breakdown_strength
 -   breakout_volume
 
 ## Factor Mapping
 
-AscendingTriangleScore
+TriangleScore
 
-## Entry
+## States
 
-Close above resistance with volume confirmation.
+-   structure_confirmed
+-   upside_breakout_confirmed
+-   downside_breakout_confirmed
 
-## Exit
+## Reference Case
 
-Close back below resistance.
+SUI 4h from 2026-06-29 04:00 to 2026-07-14 08:00 UTC+8 is a
+symmetrical triangle under this rule. Its upper and lower normalized slopes are
+-0.04538 and +0.04326 ATR per bar, and its structural score is 58.7907.
 
 ## Python Module
 
-patterns/ascending_triangle.py
+patterns/triangle.py
+
+------------------------------------------------------------------------
+
+# PATTERN_003 Three Point Trendline Support
+
+## Market Logic
+
+Three rising swing lows show buyers defending progressively higher prices.
+Lower shadows represent liquidity tests below the locally accepted price; a
+body crossing the projected line instead indicates acceptance through support
+and invalidates the structure.
+
+## Geometry
+
+-   Exactly 3 selected confirmed swing-low anchors
+-   P1 \< P2 \< P3 (positive slope)
+-   P1-P3 \>= 40 complete bars
+-   P1-P2 \>= 10 complete bars
+-   P2-P3 \>= 10 complete bars
+
+## Detection Rules
+
+-   Evaluate all confirmed swing-low combinations; they need not be consecutive.
+-   Keep swing denoising independent from the trendline anchor-spacing rules.
+-   The middle swing low must fit the P1-P3 line within the configured ATR tolerance.
+-   Each anchor line contact must be in or sufficiently close to the lower shadow.
+-   No non-anchor candle body may cross the line between P1 and P3.
+-   Emit only after the third swing low's right-side confirmation window exists.
+-   Candle timestamps are opening timestamps; rules are timeframe agnostic.
+-   Prefer the longest span, then the smallest fit error.
+
+## Required Features
+
+-   touch_count
+-   line_span
+-   leg_1_span
+-   leg_2_span
+-   line_slope
+-   line_angle
+-   fit_error
+-   fit_error_atr
+-   body_violation_count
+-   tolerance
+
+## Factor Mapping
+
+ThreePointTrendlineSupportScore
+
+## Reference Case
+
+HYPE 15m, UTC+8 opening timestamps: 2026-07-14 11:15,
+2026-07-14 20:00, and 2026-07-15 09:45. The corresponding Binance lows are
+62.555, 63.588, and 64.863, covering 35 and 55 bars respectively.
+
+## Invalidation
+
+Any candle body crossing the line inside the anchor span.
+
+## Python Module
+
+patterns/three_point_trendline_support.py
 
 ------------------------------------------------------------------------
 

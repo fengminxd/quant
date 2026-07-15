@@ -6,16 +6,19 @@ from features.basic import (
     break_count,
     breakout_strength,
     breakout_volume,
+    fit_regression_line,
     fit_error,
     higher_low_score,
     line_span,
     resistance_flatness,
+    RegressionLine,
     trend_angle,
     trend_strength,
     touch_count,
     volume_contraction,
     volume_ratio,
 )
+from features.context import ContextFeatureExtractor
 
 __all__ = [
     "atr_compression",
@@ -23,13 +26,16 @@ __all__ = [
     "break_count",
     "breakout_strength",
     "breakout_volume",
+    "fit_regression_line",
     "fit_error",
     "higher_low_score",
     "line_span",
     "resistance_flatness",
+    "RegressionLine",
     "trend_angle",
     "trend_strength",
     "touch_count",
     "volume_contraction",
     "volume_ratio",
+    "ContextFeatureExtractor",
 ]

@@ -8,6 +8,7 @@ from itertools import combinations
 
 from core.base import Pattern
 from core.models import Bar, FeatureResult, PatternResult
+from factors.pattern_factors import ThreePointTrendlineSupportScore
 from features.basic import fit_error, line_span, line_value, trend_angle
 from indicators.atr import average_true_range
 from indicators.swing import Pivot, SwingDetector
@@ -38,10 +39,14 @@ class ThreePointTrendlineSupport(Pattern):
             raise ValueError("span constraints must be positive")
         if atr_tolerance_ratio < 0:
             raise ValueError("atr_tolerance_ratio must be non-negative")
-        self.swing_detector = swing_detector or SwingDetector(min_bars=min_leg_span)
+        # Candidate spacing belongs to the trendline geometry rules below.  It
+        # must not be reused as swing denoising, otherwise a valid pivot can be
+        # discarded simply because the opposite turn happened quickly.
+        self.swing_detector = swing_detector or SwingDetector(min_bars=1)
         self.min_total_span = min_total_span
         self.min_leg_span = min_leg_span
         self.atr_tolerance_ratio = atr_tolerance_ratio
+        self.factor = ThreePointTrendlineSupportScore(min_total_span)
 
     def detect(self, data: Sequence[Bar]) -> PatternResult:
         """Detect the highest-quality strict three-point support."""
@@ -60,12 +65,16 @@ class ThreePointTrendlineSupport(Pattern):
             features,
             geometry={
                 "points": [(point.index, point.price) for point in points],
+                "point_timestamps": [data[point.index].timestamp for point in points],
                 "line": {
                     "start": (points[0].index, points[0].price),
                     "end": (points[2].index, points[2].price),
                 },
             },
-            metadata={"rule": "strict_three_point_slope_support"},
+            metadata={
+                "rule": "strict_three_point_slope_support",
+                "timestamp_semantics": "bar_open_time",
+            },
         )
 
     def extract_features(self, data: Sequence[Bar]) -> Mapping[str, FeatureResult]:
@@ -77,11 +86,7 @@ class ThreePointTrendlineSupport(Pattern):
     def calculate_score(self, features: Mapping[str, FeatureResult]) -> float:
         """Calculate a 0-100 structural quality score."""
 
-        span_score = min(100.0, features["line_span"].value / self.min_total_span * 100.0)
-        fit_score = max(0.0, 100.0 - features["fit_error_atr"].value * 100.0)
-        slope_score = 100.0 if features["line_slope"].value > 0 else 0.0
-        body_score = 100.0 if features["body_violation_count"].value == 0 else 0.0
-        return round(0.25 * span_score + 0.25 * fit_score + 0.25 * slope_score + 0.25 * body_score, 4)
+        return self.factor.calculate(features).score
 
     def visualize(self, result: PatternResult) -> Mapping[str, object]:
         """Return serializable trendline geometry."""
@@ -89,7 +94,10 @@ class ThreePointTrendlineSupport(Pattern):
         return {"pattern": self.name, "geometry": result.geometry, "score": result.score}
 
     def _best_candidate(self, data: Sequence[Bar]) -> ThreePointSupportCandidate | None:
-        lows = self._with_boundary_lows(data, self.swing_detector.lows(data))
+        # Only confirmed swing lows are eligible.  In particular, do not add
+        # the last input candle as a synthetic boundary pivot: doing so would
+        # recognize support before the right-side confirmation window exists.
+        lows = self.swing_detector.lows(data)
         if len(lows) < 3:
             return None
         atr_values = average_true_range(data)
@@ -103,23 +111,6 @@ class ThreePointTrendlineSupport(Pattern):
         if not candidates:
             return None
         return max(candidates, key=lambda candidate: self._rank(candidate))
-
-    def _with_boundary_lows(self, data: Sequence[Bar], lows: Sequence[Pivot]) -> list[Pivot]:
-        merged = list(lows)
-        if not data:
-            return merged
-        right = getattr(self.swing_detector.pivot_detector, "right", 2)
-        left = getattr(self.swing_detector.pivot_detector, "left", 2)
-        if len(data) > right:
-            first_window = data[: right + 1]
-            if data[0].low == min(bar.low for bar in first_window):
-                merged.append(Pivot(0, right, data[0].low, "low"))
-        if len(data) > left:
-            last_index = len(data) - 1
-            last_window = data[last_index - left :]
-            if data[last_index].low == min(bar.low for bar in last_window):
-                merged.append(Pivot(last_index, last_index, data[last_index].low, "low"))
-        return sorted(set(merged), key=lambda pivot: pivot.index)
 
     def _is_valid_candidate(
         self,
@@ -182,9 +173,7 @@ class ThreePointTrendlineSupport(Pattern):
     @staticmethod
     def _anchor_contact_is_valid(bar: Bar, value: float, tolerance: float) -> bool:
         body_low = min(bar.open, bar.close)
-        in_lower_shadow = bar.low - tolerance <= value <= body_low + tolerance
-        touches_close = abs(value - bar.close) <= tolerance
-        return in_lower_shadow or touches_close
+        return bar.low - tolerance <= value <= body_low
 
     @staticmethod
     def _body_violation_count(data: Sequence[Bar], points: tuple[Pivot, Pivot, Pivot]) -> int:

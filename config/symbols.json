@@ -24,6 +24,9 @@
     {"name": "NEAR", "exchange_symbol": "NEARUSDT", "enabled": true},
     {"name": "AAVE", "exchange_symbol": "AAVEUSDT", "enabled": true},
     {"name": "XRP", "exchange_symbol": "XRPUSDT", "enabled": true},
-    {"name": "TAO", "exchange_symbol": "TAOUSDT", "enabled": true}
+    {"name": "TAO", "exchange_symbol": "TAOUSDT", "enabled": true},
+    {"name": "SOL", "exchange_symbol": "SOLUSDT", "enabled": true},
+    {"name": "ONDO", "exchange_symbol": "ONDOUSDT", "enabled": true},
+    {"name": "MSTR", "exchange_symbol": "MSTRUSDT", "enabled": true}
   ]
 }

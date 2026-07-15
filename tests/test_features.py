@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from features.basic import higher_low_score, resistance_flatness, volume_contraction
+from features.basic import (
+    fit_regression_line,
+    higher_low_score,
+    resistance_flatness,
+    volume_contraction,
+)
 from indicators.swing import Pivot
 
 from tests.conftest import make_bar
@@ -33,3 +38,17 @@ def test_volume_contraction_detects_declining_participation() -> None:
     ]
 
     assert volume_contraction(data, lookback=10).value > 0.0
+
+
+def test_regression_line_returns_slope_projection_and_fit_error() -> None:
+    points = [
+        Pivot(1, 2, 12.0, "high"),
+        Pivot(3, 4, 16.0, "high"),
+        Pivot(5, 6, 20.0, "high"),
+    ]
+
+    line = fit_regression_line(points)
+
+    assert line.slope == 2.0
+    assert line.value_at(7) == 24.0
+    assert line.rmse == 0.0

@@ -45,12 +45,19 @@ Reliable trendlines have higher continuation probability.
 
 ------------------------------------------------------------------------
 
-# FACTOR_002 AscendingTriangleScore
+# FACTOR_002 TriangleScore
+
+## Market Logic
+
+Reliable triangles have well-fitted inward boundaries, measurable gap
+contraction, and preferably volatility/volume compression or an accepted
+breakout through either side.
 
 ## Inputs
 
--   resistance_flatness
--   higher_low_score
+-   boundary_direction_score
+-   boundary_fit_score
+-   convergence_score
 -   atr_compression
 -   volume_contraction
 -   breakout_strength
@@ -58,10 +65,11 @@ Reliable trendlines have higher continuation probability.
 ## Formula
 
 ``` text
-0.25*resistance_flatness
-+0.25*higher_low_score
-+0.20*atr_compression
-+0.15*volume_contraction
+0.20*boundary_direction
++0.20*boundary_fit
++0.20*convergence
++0.15*atr_compression
++0.10*volume_contraction
 +0.15*breakout_strength
 ```
 
@@ -162,6 +170,11 @@ intervening opens is stronger evidence of persistent seller defense.
 
 ------------------------------------------------------------------------
 
+Seven pattern-conditioned context factors and their six Pattern profiles are
+specified in `CONTEXT_FACTORS.md`.
+
+------------------------------------------------------------------------
+
 # FACTOR_005 InverseHeadShouldersScore
 
 ## Market Logic
@@ -255,5 +268,41 @@ projected neckline and volume relative to the preceding 20 bars.
 -   Forward-return IC and RankIC from structure and breakdown confirmation separately
 -   15m, 1h, and 4h walk-forward and rolling out-of-sample tests
 -   Trend, consolidation, and high-volatility regime segmentation
+-   Fee, slippage, and funding sensitivity
+-   Monte Carlo trade-order and execution-cost resampling
+
+------------------------------------------------------------------------
+
+# FACTOR_007 ThreePointTrendlineSupportScore
+
+## Market Logic
+
+A longer, accurately fitted rising boundary with no body acceptance through it
+is stronger evidence that buyers repeatedly defend progressively higher prices.
+
+## Inputs
+
+-   line_span
+-   fit_error_atr
+-   line_slope
+-   body_violation_count
+
+## Formula
+
+``` text
+0.25*span_quality
++0.25*fit_quality
++0.25*positive_slope
++0.25*body_integrity
+```
+
+## Output
+
+0\~100 structural score; never Buy/Sell.
+
+## Validation
+
+-   Forward-return IC and RankIC by timeframe and market regime
+-   Walk-forward and rolling out-of-sample tests
 -   Fee, slippage, and funding sensitivity
 -   Monte Carlo trade-order and execution-cost resampling

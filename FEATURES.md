@@ -20,6 +20,12 @@ Reusable quantitative features shared by all patterns.
   breakout_strength     Breakout quality         close-resistance
   resistance_flatness   Flatness score           Std(highs)
   higher_low_score      Rising lows score        Regression on lows
+  regression_line       Fitted boundary          Least-squares slope/intercept/RMSE
+  triangle_convergence  Boundary compression     (initial gap-final gap)/initial gap
+  market_structure      HH/HL or LH/LL            Confirmed swing comparisons
+  ema99_context         Accepted-value context    Price/slope/persistence vs EMA99
+  prior_level_state     Breakout/breakdown         Close and wick distance / ATR
+  candle_rejection      Hammer geometry            Body and shadow proportions
 
 ## Rules
 

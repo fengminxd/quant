@@ -9,6 +9,7 @@ from patterns.inverse_head_shoulders import InverseHeadShoulders
 from patterns.three_point_trendline_resistance import ThreePointTrendlineResistance
 from patterns.three_point_trendline_support import ThreePointTrendlineSupport
 from patterns.trendline_support import TrendlineSupport
+from patterns.triangle import Triangle
 
 __all__ = [
     "AscendingTriangle",
@@ -20,4 +21,5 @@ __all__ = [
     "ThreePointTrendlineResistance",
     "ThreePointTrendlineSupport",
     "TrendlineSupport",
+    "Triangle",
 ]

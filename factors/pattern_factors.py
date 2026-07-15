@@ -33,20 +33,56 @@ class TrendlineSupportScore(Factor):
         return FactorResult("TrendlineSupportScore", score, _feature_values(features))
 
 
-class AscendingTriangleScore(Factor):
-    """Score flat resistance plus rising demand compression."""
+class TriangleScore(Factor):
+    """Score fitted inward boundaries and volatility/volume compression."""
 
     def calculate(self, features: Mapping[str, FeatureResult]) -> FactorResult:
-        """Calculate ascending triangle factor score."""
+        """Calculate a direction-neutral converging-triangle score."""
 
         score = clamp(
-            0.25 * _value(features, "resistance_flatness")
-            + 0.25 * _value(features, "higher_low_score")
-            + 0.20 * _value(features, "atr_compression")
-            + 0.15 * _value(features, "volume_contraction")
+            0.20 * _value(features, "boundary_direction_score")
+            + 0.20 * _value(features, "boundary_fit_score")
+            + 0.20 * _value(features, "convergence_score")
+            + 0.15 * _value(features, "atr_compression")
+            + 0.10 * _value(features, "volume_contraction")
             + 0.15 * _value(features, "breakout_strength")
         )
-        return FactorResult("AscendingTriangleScore", score, _feature_values(features))
+        return FactorResult("TriangleScore", round(score, 4), _feature_values(features))
+
+
+AscendingTriangleScore = TriangleScore
+
+
+class ThreePointTrendlineSupportScore(Factor):
+    """Score the structural quality of strict ascending support."""
+
+    def __init__(self, min_total_span: int = 40) -> None:
+        if min_total_span <= 0:
+            raise ValueError("min_total_span must be positive")
+        self.min_total_span = min_total_span
+
+    def calculate(self, features: Mapping[str, FeatureResult]) -> FactorResult:
+        """Return a 0-100 score without emitting a trading direction."""
+
+        span_score = clamp(
+            _value(features, "line_span") / self.min_total_span * 100.0
+        )
+        fit_score = clamp(100.0 - _value(features, "fit_error_atr") * 100.0)
+        slope_score = 100.0 if _value(features, "line_slope") > 0.0 else 0.0
+        body_score = (
+            100.0 if _value(features, "body_violation_count") == 0.0 else 0.0
+        )
+        score = clamp(
+            0.25 * span_score
+            + 0.25 * fit_score
+            + 0.25 * slope_score
+            + 0.25 * body_score
+        )
+        return FactorResult(
+            "ThreePointTrendlineSupportScore",
+            round(score, 4),
+            _feature_values(features),
+        )
 
 
 class ThreePointTrendlineResistanceScore(Factor):

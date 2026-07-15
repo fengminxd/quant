@@ -188,15 +188,17 @@ def test_trendline_support_detects_three_rising_swing_lows() -> None:
     assert result.geometry["points"][0][0] == 2
 
 
-def test_ascending_triangle_detects_flat_resistance_and_higher_lows() -> None:
+def test_triangle_detects_flat_highs_and_rising_lows() -> None:
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
     detector = AscendingTriangle(swing)
 
     result = detector.detect(triangle_bars())
 
     assert result.detected is True
-    assert result.features["higher_low_score"].value >= 66.0
-    assert result.geometry["resistance"] > 19.8
+    assert result.metadata["triangle_type"] == "ascending_triangle"
+    assert abs(result.features["upper_slope_atr_per_bar"].value) <= 0.02
+    assert result.features["lower_slope_atr_per_bar"].value > 0.0
+    assert result.features["convergence_ratio"].value > 0.0
 
 
 def test_three_point_trendline_support_detects_strict_support() -> None:

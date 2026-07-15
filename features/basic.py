@@ -4,10 +4,47 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from core.models import Bar, FeatureResult
 from indicators.atr import average_true_range
 from indicators.swing import Pivot
+
+
+@dataclass(frozen=True)
+class RegressionLine:
+    """Least-squares line through indexed price pivots."""
+
+    slope: float
+    intercept: float
+    rmse: float
+
+    def value_at(self, index: int) -> float:
+        """Project the fitted line at a bar index."""
+
+        return self.intercept + self.slope * index
+
+
+def fit_regression_line(points: Sequence[Pivot]) -> RegressionLine:
+    """Fit a deterministic least-squares line without future observations."""
+
+    if len(points) < 2:
+        raise ValueError("at least two pivots are required")
+    mean_index = sum(point.index for point in points) / len(points)
+    mean_price = sum(point.price for point in points) / len(points)
+    variance = sum((point.index - mean_index) ** 2 for point in points)
+    slope = 0.0
+    if variance > 0.0:
+        slope = sum(
+            (point.index - mean_index) * (point.price - mean_price)
+            for point in points
+        ) / variance
+    intercept = mean_price - slope * mean_index
+    rmse = math.sqrt(
+        sum((point.price - (intercept + slope * point.index)) ** 2 for point in points)
+        / len(points)
+    )
+    return RegressionLine(slope, intercept, rmse)
 
 
 def clamp(value: float, minimum: float = 0.0, maximum: float = 100.0) -> float:
