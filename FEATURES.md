@@ -26,6 +26,12 @@ Reusable quantitative features shared by all patterns.
   ema99_context         Accepted-value context    Price/slope/persistence vs EMA99
   prior_level_state     Breakout/breakdown         Close and wick distance / ATR
   candle_rejection      Hammer geometry            Body and shadow proportions
+  shared_anchor         Pattern confluence          Same right-anchor index
+  resistance_reclaim   Old resistance accepted     (event close-level)/ATR
+  confirmation_lag     Causal availability          confirmed_at-event index
+  neckline_source      Cross-pattern lineage        Horizontal source in neckline
+  retest_anchor        Cross-pattern lineage        Retest equals trendline P1
+  support_lineage      Sequential structure          Both index links confirmed
 
 ## Rules
 

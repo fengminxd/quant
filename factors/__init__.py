@@ -26,10 +26,17 @@ from factors.pattern_factors import (
     TriangleScore,
     TrendlineSupportScore,
 )
+from factors.support_confluence import (
+    BullishSupportConfluenceScore,
+    SupportConfluenceEvaluation,
+    SupportConfluenceScorer,
+)
+from factors.support_lineage import SupportLineageScore
 
 __all__ = [
     "DEFAULT_PATTERN_FACTOR_PROFILES",
     "AscendingTriangleScore",
+    "BullishSupportConfluenceScore",
     "DowntrendStructureScore",
     "EMA99ContextScore",
     "FactorSpec",
@@ -43,6 +50,9 @@ __all__ = [
     "PatternFactorProfile",
     "PriorHighBreakoutScore",
     "PriorLowBreakdownScore",
+    "SupportConfluenceEvaluation",
+    "SupportConfluenceScorer",
+    "SupportLineageScore",
     "ThreePointTrendlineResistanceScore",
     "ThreePointTrendlineSupportScore",
     "TriangleScore",

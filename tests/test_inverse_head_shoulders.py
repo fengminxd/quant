@@ -139,7 +139,13 @@ def test_zec_1h_regression_uses_supplied_utc_plus_8_anchors() -> None:
     result = detector().detect(bars)
 
     assert result.detected is True
+    assert result.metadata["state"] == "breakout_confirmed"
     assert result.features["span"].value == 132.0
+    assert result.features["left_leg_span"].value == 81.0
+    assert result.features["right_leg_span"].value == 51.0
+    assert result.features["head_depth_atr"].value > 0.5
+    assert result.features["breakout_confirmed"].value == 1.0
+    assert result.score >= 75.0
     assert result.geometry["point_timestamps"] == [
         "2026-06-25 13:00",
         "2026-06-28 22:00",
@@ -150,3 +156,18 @@ def test_zec_1h_regression_uses_supplied_utc_plus_8_anchors() -> None:
         (91, 367.77),
         (142, 385.07),
     ]
+    utc_plus_8 = [
+        (
+            datetime.strptime(value, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+            + timedelta(hours=8)
+        ).strftime("%Y-%m-%d %H:%M")
+        for value in result.geometry["point_timestamps"]
+    ]
+    assert utc_plus_8 == [
+        "2026-06-25 21:00",
+        "2026-06-29 06:00",
+        "2026-07-01 09:00",
+    ]
+    neck_left, neck_right = result.geometry["neckline_points"]
+    assert 10 < neck_left[0] < 91 < neck_right[0] < 142
+    assert result.geometry["breakout_index"] > 142

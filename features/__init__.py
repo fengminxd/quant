@@ -19,6 +19,7 @@ from features.basic import (
     volume_ratio,
 )
 from features.context import ContextFeatureExtractor
+from features.pattern_lineage import support_lineage_features
 
 __all__ = [
     "atr_compression",
@@ -38,4 +39,5 @@ __all__ = [
     "volume_contraction",
     "volume_ratio",
     "ContextFeatureExtractor",
+    "support_lineage_features",
 ]

@@ -11,6 +11,15 @@ from core.models import Bar, FeatureResult, PatternResult
 from features.basic import clamp
 from indicators.atr import average_true_range
 from indicators.swing import Pivot, PivotDetector, SwingDetector
+from patterns.support_levels import (
+    all_closes_above_level,
+    body_pierce_count,
+    first_accepted_breakout,
+    lower_support_levels,
+    matching_level,
+    post_breakout_closes_hold,
+    upper_resistance_levels,
+)
 
 
 @dataclass(frozen=True)
@@ -23,6 +32,7 @@ class HorizontalSupportCandidate:
     tolerance: float
     pierce_count: int
     level_error: float
+    breakout_index: int | None = None
 
 
 class HorizontalSupport(Pattern):
@@ -41,7 +51,9 @@ class HorizontalSupport(Pattern):
             raise ValueError("min_span must be positive")
         if atr_tolerance_ratio < 0:
             raise ValueError("atr_tolerance_ratio must be non-negative")
-        self.swing_detector = swing_detector or SwingDetector(PivotDetector(left=5, right=5), min_bars=3)
+        self.swing_detector = swing_detector or SwingDetector(
+            PivotDetector(left=5, right=5), min_bars=3
+        )
         self.min_span = min_span
         self.atr_tolerance_ratio = atr_tolerance_ratio
 
@@ -49,9 +61,27 @@ class HorizontalSupport(Pattern):
         """Detect the highest-quality horizontal support candidate."""
 
         candidate = self._best_candidate(data)
+        return self._result(data, candidate)
+
+    def detect_at(self, data: Sequence[Bar], anchor_index: int) -> PatternResult:
+        """Detect horizontal support whose right anchor is ``anchor_index``."""
+
+        if anchor_index < 0 or anchor_index >= len(data):
+            raise ValueError("anchor_index is outside supplied data")
+        candidate = self._best_candidate(data, anchor_index)
+        return self._result(data, candidate, anchor_index)
+
+    def _result(
+        self,
+        data: Sequence[Bar],
+        candidate: HorizontalSupportCandidate | None,
+        anchor_index: int | None = None,
+    ) -> PatternResult:
         if candidate is None:
-            return PatternResult(self.pattern_id, self.name, False, 0.0)
-        features = self._features_for_candidate(candidate)
+            metadata = {"event_index": anchor_index} if anchor_index is not None else {}
+            return PatternResult(self.pattern_id, self.name, False, 0.0, metadata=metadata)
+        features = self._features_for_candidate(data, candidate)
+        right = candidate.points[1]
         return PatternResult(
             self.pattern_id,
             self.name,
@@ -61,15 +91,25 @@ class HorizontalSupport(Pattern):
             geometry={
                 "level": candidate.level,
                 "points": [(point.index, point.price) for point in candidate.points],
+                "point_timestamps": [data[point.index].timestamp for point in candidate.points],
+                "breakout_index": candidate.breakout_index,
+                "breakout_timestamp": (
+                    data[candidate.breakout_index].timestamp
+                    if candidate.breakout_index is not None else None
+                ),
             },
-            metadata={"rule_type": candidate.rule_type},
+            metadata={
+                "rule_type": candidate.rule_type,
+                "event_index": right.index,
+                "detected_at_index": right.confirmed_at,
+            },
         )
 
     def extract_features(self, data: Sequence[Bar]) -> Mapping[str, FeatureResult]:
         """Extract features from the best candidate."""
 
         candidate = self._best_candidate(data)
-        return {} if candidate is None else self._features_for_candidate(candidate)
+        return {} if candidate is None else self._features_for_candidate(data, candidate)
 
     def calculate_score(self, features: Mapping[str, FeatureResult]) -> float:
         """Calculate a 0-100 structural score."""
@@ -77,20 +117,32 @@ class HorizontalSupport(Pattern):
         span_score = clamp(features["span"].value / self.min_span * 100.0)
         pierce_penalty = clamp(features["pierce_count"].value * 50.0)
         level_error_score = max(0.0, 100.0 - features["level_error_atr"].value * 100.0)
-        return round(0.45 * span_score + 0.35 * level_error_score + 0.20 * (100.0 - pierce_penalty), 4)
+        return round(
+            0.45 * span_score
+            + 0.35 * level_error_score
+            + 0.20 * (100.0 - pierce_penalty),
+            4,
+        )
 
     def visualize(self, result: PatternResult) -> Mapping[str, object]:
         """Return serializable support geometry."""
 
         return {"pattern": self.name, "geometry": result.geometry, "score": result.score}
 
-    def _best_candidate(self, data: Sequence[Bar]) -> HorizontalSupportCandidate | None:
+    def _best_candidate(
+        self, data: Sequence[Bar], anchor_index: int | None = None
+    ) -> HorizontalSupportCandidate | None:
         swings = self.swing_detector.detect(data)
         swings = self._with_boundary_swings(data, swings)
         atr = average_true_range(data)[-1]
         tolerance = max(1e-9, atr * self.atr_tolerance_ratio)
         candidates = self._double_low_candidates(data, swings, tolerance)
         candidates.extend(self._breakout_retest_candidates(data, swings, tolerance))
+        if anchor_index is not None:
+            candidates = [
+                candidate for candidate in candidates
+                if candidate.points[1].index == anchor_index
+            ]
         if not candidates:
             return None
         return max(candidates, key=lambda candidate: self._rank(candidate))
@@ -125,19 +177,23 @@ class HorizontalSupport(Pattern):
         for left, right in combinations(lows, 2):
             if right.index - left.index < self.min_span:
                 continue
-            match = self._matching_level(
-                self._lower_support_levels(data[left.index]),
-                self._lower_support_levels(data[right.index]),
+            match = matching_level(
+                lower_support_levels(data[left.index]),
+                lower_support_levels(data[right.index]),
                 tolerance,
             )
             if match is None:
                 continue
             level, level_error = match
-            if self._body_pierce_count(data, left.index, right.index, level, tolerance) != 0:
+            if body_pierce_count(data, left.index, right.index, level) != 0:
                 continue
-            if not self._all_closes_above_level(data, left.index, right.index, level, tolerance):
+            if not all_closes_above_level(data, left.index, right.index, level, tolerance):
                 continue
-            candidates.append(HorizontalSupportCandidate("double_swing_low", (left, right), level, tolerance, 0, level_error))
+            candidates.append(
+                HorizontalSupportCandidate(
+                    "double_swing_low", (left, right), level, tolerance, 0, level_error
+                )
+            )
         return candidates
 
     def _breakout_retest_candidates(
@@ -153,98 +209,77 @@ class HorizontalSupport(Pattern):
             for low in lows:
                 if low.index <= high.index or low.index - high.index < self.min_span:
                     continue
-                match = self._matching_level(
-                    self._upper_resistance_levels(data[high.index]),
-                    self._lower_support_levels(data[low.index]),
+                match = matching_level(
+                    upper_resistance_levels(data[high.index]),
+                    lower_support_levels(data[low.index]),
                     tolerance,
                 )
                 if match is None:
                     continue
                 level, level_error = match
-                pierces = self._body_pierce_count(data, high.index, low.index, level, tolerance)
-                if pierces != 1:
+                breakout_index = first_accepted_breakout(
+                    data, high.index + 1, low.index, level
+                )
+                if breakout_index is None:
                     continue
-                if not self._above_line_closes_hold(data, high.index, low.index, level, tolerance):
+                if not post_breakout_closes_hold(
+                    data, high.index, breakout_index, low.index, level, tolerance
+                ):
                     continue
-                candidates.append(HorizontalSupportCandidate("breakout_retest", (high, low), level, tolerance, pierces, level_error))
+                candidates.append(
+                    HorizontalSupportCandidate(
+                        "breakout_retest", (high, low), level, tolerance,
+                        1, level_error, breakout_index,
+                    )
+                )
         return candidates
 
-    def _features_for_candidate(self, candidate: HorizontalSupportCandidate) -> Mapping[str, FeatureResult]:
+    def _features_for_candidate(
+        self, data: Sequence[Bar], candidate: HorizontalSupportCandidate
+    ) -> Mapping[str, FeatureResult]:
         left, right = candidate.points
+        atr = max(average_true_range(data[: right.index + 1])[-1], 1e-12)
         return {
-            "rule_type": FeatureResult("rule_type", 1.0 if candidate.rule_type == "breakout_retest" else 0.0, 1.0),
+            "rule_type": FeatureResult(
+                "rule_type",
+                1.0 if candidate.rule_type == "breakout_retest" else 0.0,
+                1.0,
+            ),
             "span": FeatureResult("span", float(right.index - left.index), 1.0),
             "level": FeatureResult("level", candidate.level, 1.0),
             "pierce_count": FeatureResult("pierce_count", float(candidate.pierce_count), 1.0),
             "level_error": FeatureResult("level_error", candidate.level_error, 1.0),
-            "level_error_atr": FeatureResult("level_error_atr", candidate.level_error / candidate.tolerance * 0.1, 1.0),
+            "level_error_atr": FeatureResult(
+                "level_error_atr",
+                candidate.level_error / candidate.tolerance * 0.1,
+                1.0,
+            ),
+            "breakout_index": FeatureResult(
+                "breakout_index",
+                float(candidate.breakout_index if candidate.breakout_index is not None else -1),
+                1.0,
+            ),
+            "retest_close_distance_atr": FeatureResult(
+                "retest_close_distance_atr",
+                (data[right.index].close - candidate.level) / atr,
+                1.0,
+            ),
         }
 
     @staticmethod
-    def _lower_support_levels(bar: Bar) -> tuple[float, ...]:
-        return (bar.low, bar.close)
-
-    @staticmethod
-    def _upper_resistance_levels(bar: Bar) -> tuple[float, ...]:
-        return (bar.open, bar.high)
-
-    @staticmethod
-    def _matching_level(left: Sequence[float], right: Sequence[float], tolerance: float) -> tuple[float, float] | None:
-        matches = [((a + b) / 2.0, abs(a - b)) for a in left for b in right if abs(a - b) <= tolerance]
-        if not matches:
-            return None
-        return min(matches, key=lambda item: item[1])
-
-    @staticmethod
-    def _body_pierce_count(
-        data: Sequence[Bar],
-        left_index: int,
-        right_index: int,
-        level: float,
-        tolerance: float,
-    ) -> int:
-        count = 0
-        for bar in data[left_index + 1 : right_index]:
-            body_low = min(bar.open, bar.close)
-            body_high = max(bar.open, bar.close)
-            if body_low <= level <= body_high:
-                count += 1
-        return count
-
-    @staticmethod
-    def _all_closes_above_level(
-        data: Sequence[Bar],
-        left_index: int,
-        right_index: int,
-        level: float,
-        tolerance: float,
-    ) -> bool:
-        for bar in data[left_index + 1 : right_index]:
-            if bar.close + tolerance < level:
-                return False
-        return True
-
-    @staticmethod
-    def _above_line_closes_hold(
-        data: Sequence[Bar],
-        left_index: int,
-        right_index: int,
-        level: float,
-        tolerance: float,
-    ) -> bool:
-        close_floor = max(data[left_index].close, data[right_index].close)
-        for bar in data[left_index + 1 : right_index]:
-            body_low = min(bar.open, bar.close)
-            body_high = max(bar.open, bar.close)
-            body_pierces = body_low <= level <= body_high
-            if body_pierces:
-                continue
-            if bar.low > level + tolerance and bar.close + tolerance < close_floor:
-                return False
-        return True
-
-    @staticmethod
-    def _rank(candidate: HorizontalSupportCandidate) -> tuple[float, float]:
+    def _rank(
+        candidate: HorizontalSupportCandidate,
+    ) -> tuple[float, float, float, float]:
         left, right = candidate.points
         rule_priority = 1.0 if candidate.rule_type == "breakout_retest" else 0.0
-        return (rule_priority, -candidate.level_error, float(right.index - left.index), -float(candidate.pierce_count))
+        recency_or_span = (
+            float(left.index)
+            if candidate.breakout_index is not None
+            else float(right.index - left.index)
+        )
+        return (
+            rule_priority,
+            recency_or_span,
+            -candidate.level_error,
+            -float(candidate.pierce_count),
+        )

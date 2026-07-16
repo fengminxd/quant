@@ -52,8 +52,100 @@ class ThreePointTrendlineSupport(Pattern):
         """Detect the highest-quality strict three-point support."""
 
         candidate = self._best_candidate(data)
+        return self._result(data, candidate)
+
+    def detect_at(self, data: Sequence[Bar], anchor_index: int) -> PatternResult:
+        """Detect support whose third confirmed swing is ``anchor_index``."""
+
+        if anchor_index < 0 or anchor_index >= len(data):
+            raise ValueError("anchor_index is outside supplied data")
+        candidate = self._best_candidate(data, anchor_index)
+        return self._result(data, candidate, anchor_index)
+
+    def detect_anchors(
+        self,
+        data: Sequence[Bar],
+        anchor_indexes: tuple[int, int, int],
+        max_confirmation_offset: int = 1,
+    ) -> PatternResult:
+        """Validate supplied contacts against exact or adjacent confirmed lows."""
+        if len(anchor_indexes) != 3:
+            raise ValueError("exactly three anchor_indexes are required")
+        if max_confirmation_offset < 0:
+            raise ValueError("max_confirmation_offset must be non-negative")
+        if not (anchor_indexes[0] < anchor_indexes[1] < anchor_indexes[2]):
+            raise ValueError("anchor_indexes must be strictly increasing")
+        if anchor_indexes[0] < 0 or anchor_indexes[-1] >= len(data):
+            raise ValueError("anchor_indexes are outside supplied data")
+        event_index = anchor_indexes[-1]
+        atr_values = average_true_range(data[: event_index + 1])
+        atr = atr_values[-1] if atr_values else 0.0
+        tolerance = max(1e-9, atr * self.atr_tolerance_ratio)
+        confirmed_lows = self.swing_detector.lows(data)
+        resolved: list[Pivot] = []
+        source_indexes: list[int] = []
+        for index in anchor_indexes:
+            matches = [
+                pivot
+                for pivot in confirmed_lows
+                if 0 <= pivot.index - index <= max_confirmation_offset
+                and abs(pivot.price - data[index].low) <= tolerance
+            ]
+            if not matches:
+                return PatternResult(
+                    self.pattern_id,
+                    self.name,
+                    False,
+                    0.0,
+                    metadata={"event_index": event_index, "anchor_indexes": anchor_indexes},
+                )
+            source = min(
+                matches,
+                key=lambda pivot: (pivot.index - index, abs(pivot.price - data[index].low)),
+            )
+            resolved.append(Pivot(index, source.confirmed_at, data[index].low, "low"))
+            source_indexes.append(source.index)
+        points = (resolved[0], resolved[1], resolved[2])
+        candidate = ThreePointSupportCandidate(points, tolerance)
+        if not self._is_valid_candidate(data, points, tolerance):
+            return PatternResult(
+                self.pattern_id,
+                self.name,
+                False,
+                0.0,
+                metadata={"event_index": event_index, "anchor_indexes": anchor_indexes},
+            )
+        result = self._result(data, candidate, event_index)
+        metadata = dict(result.metadata)
+        metadata.update(
+            {
+                "anchor_mode": "supplied_confirmed_swing_zone",
+                "resolved_swing_indexes": tuple(source_indexes),
+                "anchor_confirmation_offsets": tuple(
+                    source - anchor
+                    for source, anchor in zip(source_indexes, anchor_indexes)
+                ),
+            }
+        )
+        return PatternResult(
+            result.pattern_id,
+            result.name,
+            result.detected,
+            result.score,
+            result.features,
+            result.geometry,
+            metadata,
+        )
+
+    def _result(
+        self,
+        data: Sequence[Bar],
+        candidate: ThreePointSupportCandidate | None,
+        anchor_index: int | None = None,
+    ) -> PatternResult:
         if candidate is None:
-            return PatternResult(self.pattern_id, self.name, False, 0.0)
+            metadata = {"event_index": anchor_index} if anchor_index is not None else {}
+            return PatternResult(self.pattern_id, self.name, False, 0.0, metadata=metadata)
         features = self._features_for_candidate(data, candidate)
         score = self.calculate_score(features)
         points = candidate.points
@@ -74,6 +166,8 @@ class ThreePointTrendlineSupport(Pattern):
             metadata={
                 "rule": "strict_three_point_slope_support",
                 "timestamp_semantics": "bar_open_time",
+                "event_index": points[2].index,
+                "detected_at_index": points[2].confirmed_at,
             },
         )
 
@@ -93,10 +187,10 @@ class ThreePointTrendlineSupport(Pattern):
 
         return {"pattern": self.name, "geometry": result.geometry, "score": result.score}
 
-    def _best_candidate(self, data: Sequence[Bar]) -> ThreePointSupportCandidate | None:
-        # Only confirmed swing lows are eligible.  In particular, do not add
-        # the last input candle as a synthetic boundary pivot: doing so would
-        # recognize support before the right-side confirmation window exists.
+    def _best_candidate(
+        self, data: Sequence[Bar], anchor_index: int | None = None
+    ) -> ThreePointSupportCandidate | None:
+        # Only confirmed swing lows are eligible; never synthesize the last bar.
         lows = self.swing_detector.lows(data)
         if len(lows) < 3:
             return None
@@ -106,6 +200,8 @@ class ThreePointTrendlineSupport(Pattern):
         candidates: list[ThreePointSupportCandidate] = []
         for combo in combinations(lows, 3):
             points = (combo[0], combo[1], combo[2])
+            if anchor_index is not None and points[2].index != anchor_index:
+                continue
             if self._is_valid_candidate(data, points, tolerance):
                 candidates.append(ThreePointSupportCandidate(points, tolerance))
         if not candidates:
@@ -124,7 +220,9 @@ class ThreePointTrendlineSupport(Pattern):
         if abs(p2.price - line_value(p1, p3, p2.index)) > tolerance:
             return False
         valid_contacts = [
-            self._anchor_contact_is_valid(data[point.index], line_value(p1, p3, point.index), tolerance)
+            self._anchor_contact_is_valid(
+                data[point.index], line_value(p1, p3, point.index), tolerance
+            )
             for point in points
         ]
         if not all(valid_contacts):
@@ -144,8 +242,12 @@ class ThreePointTrendlineSupport(Pattern):
         return {
             "touch_count": FeatureResult("touch_count", 3.0, 1.0),
             "line_span": line_span(points),
-            "leg_1_span": FeatureResult("leg_1_span", float(points[1].index - points[0].index), 1.0),
-            "leg_2_span": FeatureResult("leg_2_span", float(points[2].index - points[1].index), 1.0),
+            "leg_1_span": FeatureResult(
+                "leg_1_span", float(points[1].index - points[0].index), 1.0
+            ),
+            "leg_2_span": FeatureResult(
+                "leg_2_span", float(points[2].index - points[1].index), 1.0
+            ),
             "line_slope": FeatureResult("line_slope", slope, 1.0),
             "line_angle": trend_angle(points),
             "fit_error": FeatureResult("fit_error", error, 1.0),

@@ -205,6 +205,54 @@ patterns/three_point_trendline_support.py
 
 ------------------------------------------------------------------------
 
+# PATTERN_004 Horizontal Support
+
+## Market Logic
+
+Horizontal support represents either repeated defense of the same lower price
+or a market-behavior transition in which former resistance is accepted above
+and later holds as support. The second rule distinguishes pre-breakout trading
+below resistance from post-breakout failure; only the latter invalidates the
+retest hypothesis.
+
+## Geometry
+
+-   Two confirmed swing anchors separated by at least 40 bars
+-   Double-low rule: aligned low/close support contacts
+-   Breakout-retest rule: earlier high/open resistance aligned with a later
+    swing-low/close support contact
+
+## Breakout-Retest Rules
+
+-   Find an accepted close above the aligned resistance after the first anchor.
+-   Ignore below-resistance trading before that accepted breakout.
+-   After breakout, closes must hold the level within ATR tolerance.
+-   Allow at most one intermediate body interaction with the level.
+-   The retest close must hold within the configured ATR tolerance; a marginal
+    close below the exact midpoint remains a valid level-zone retest.
+-   Prefer the most recent eligible broken resistance for a retest event.
+-   `detect_at()` constrains the right anchor to a supplied event index.
+
+## Required Features
+
+-   rule_type
+-   span
+-   level
+-   level_error_atr
+-   breakout_index
+-   retest_close_distance_atr
+
+## Invalidation
+
+Post-breakout close acceptance below the reclaimed level or repeated body
+crossings before the retest.
+
+## Python Module
+
+patterns/horizontal_support.py
+
+------------------------------------------------------------------------
+
 # PATTERN_005 Three Point Trendline Resistance
 
 ## Market Logic
@@ -367,6 +415,30 @@ buyers have accepted price above the intervening supply boundary.
 ## Factor Mapping
 
 InverseHeadShouldersScore
+
+## Reference Case
+
+ZECUSDT 1h, UTC+8 from 2026-06-25 21:00 through 2026-07-01 09:00:
+
+-   left shoulder: 2026-06-25 21:00 at 386.01;
+-   head: 2026-06-29 06:00 at 367.77;
+-   right shoulder: 2026-07-01 09:00 at 385.07;
+-   neckline highs: 2026-06-27 00:00 at 429.25 and
+    2026-06-30 06:00 at 413.98;
+-   the right shoulder is observable after five confirmation bars;
+-   the projected neckline breakout is confirmed at 2026-07-01 21:00.
+
+On the Binance USD-M production feed configuration—5-left/5-right pivots and
+one-hour opening timestamps—the raw ZECUSDT structural and breakout
+score is 90.8737. The offline regression fixes the reported shoulder/head
+timestamps and verifies a detected, breakout-confirmed structure without
+network access.
+
+The same left-neckline candle at 2026-06-27 00:00 later becomes the source of
+a breakout-retest horizontal support at 2026-07-03 12:00. That retest is the
+first supplied anchor of a rising support line completed by 2026-07-06 20:00
+and 2026-07-07 12:00. The last supplied contact maps to the adjacent confirmed
+Swing Low at 13:00 with a one-bar offset and only 0.07 price difference.
 
 ## Invalidation
 
