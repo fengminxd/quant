@@ -119,8 +119,84 @@ def test_scores_breakout_in_either_direction(direction: str) -> None:
 def test_last_boundary_requires_right_side_swing_confirmation() -> None:
     bars = triangle_bars(-0.08, 0.08)
 
-    assert detector().detect(bars[:23]).detected is False
-    assert detector().detect(bars[:24]).detected is True
+    before = detector().detect(bars[:23])
+    after = detector().detect(bars[:24])
+
+    assert before.detected is True
+    assert before.metadata["upper_confirmation_count"] == 3
+    assert before.metadata["lower_confirmation_count"] == 2
+    assert after.detected is True
+    assert after.metadata["upper_confirmation_count"] == 3
+    assert after.metadata["lower_confirmation_count"] == 3
+
+
+class StaticSwingDetector:
+    def __init__(self, points: list[Pivot]) -> None:
+        self.points = points
+
+    def detect(self, data: list[Bar]) -> list[Pivot]:
+        return self.points
+
+
+def static_bars() -> list[Bar]:
+    return [Bar(i, 15.0, 15.2, 14.8, 15.0, 1000.0, "4h") for i in range(25)]
+
+
+@pytest.mark.parametrize(
+    ("highs", "lows", "detected", "counts"),
+    [
+        (
+            [
+                Pivot(2, 3, 20.0, "high"),
+                Pivot(10, 11, 19.0, "high"),
+                Pivot(18, 19, 18.0, "high"),
+            ],
+            [Pivot(6, 7, 10.0, "low"), Pivot(14, 15, 12.0, "low")],
+            True,
+            (3, 2),
+        ),
+        (
+            [Pivot(6, 7, 20.0, "high"), Pivot(14, 15, 18.0, "high")],
+            [
+                Pivot(2, 3, 10.0, "low"),
+                Pivot(10, 11, 11.0, "low"),
+                Pivot(22, 23, 12.0, "low"),
+            ],
+            True,
+            (2, 3),
+        ),
+        (
+            [Pivot(2, 3, 20.0, "high"), Pivot(18, 19, 18.0, "high")],
+            [Pivot(6, 7, 10.0, "low"), Pivot(14, 15, 12.0, "low")],
+            False,
+            None,
+        ),
+        (
+            [
+                Pivot(2, 3, 20.0, "high"),
+                Pivot(10, 11, 19.0, "high"),
+                Pivot(18, 19, 18.0, "high"),
+            ],
+            [Pivot(6, 7, 10.0, "low"), Pivot(22, 23, 12.0, "low")],
+            False,
+            None,
+        ),
+    ],
+)
+def test_accepts_three_plus_two_but_rejects_two_plus_two(
+    highs: list[Pivot],
+    lows: list[Pivot],
+    detected: bool,
+    counts: tuple[int, int] | None,
+) -> None:
+    result = Triangle(swing_detector=StaticSwingDetector(highs + lows)).detect(static_bars())
+
+    assert result.detected is detected
+    if counts is not None:
+        assert (
+            result.metadata["upper_confirmation_count"],
+            result.metadata["lower_confirmation_count"],
+        ) == counts
 
 
 def test_sui_reference_boundaries_are_inward_and_converging() -> None:

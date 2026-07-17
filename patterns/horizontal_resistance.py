@@ -27,9 +27,9 @@ class HorizontalResistance(Pattern):
     """Detect unpenetrated horizontal resistance across any input timeframe.
 
     A valid level contacts each anchor at its open or upper shadow. Between the
-    anchors no candle may trade above the level, and every open must be no
-    higher than the lower of the two anchor opens. Span is measured as the
-    difference between candle indexes, so 40 means 40 complete bar intervals.
+    anchors no candle may trade or open above the level. Span is measured as
+    the difference between candle indexes, so 40 means 40 complete bar
+    intervals.
     """
 
     pattern_id = "PATTERN_006"
@@ -110,7 +110,9 @@ class HorizontalResistance(Pattern):
             for level in self._shared_contact_levels(data[left.index], data[right.index]):
                 if self._penetration_count(data, left.index, right.index, level) > 0:
                     continue
-                if self._open_violation_count(data, left.index, right.index) > 0:
+                if self._open_violation_count(
+                    data, left.index, right.index, level
+                ) > 0:
                     continue
                 candidates.append(
                     HorizontalResistanceCandidate(
@@ -157,11 +159,14 @@ class HorizontalResistance(Pattern):
         )
 
     def _open_violation_count(
-        self, data: Sequence[Bar], left_index: int, right_index: int
+        self,
+        data: Sequence[Bar],
+        left_index: int,
+        right_index: int,
+        level: float,
     ) -> int:
-        open_ceiling = min(data[left_index].open, data[right_index].open)
         return sum(
-            bar.open > open_ceiling + self.price_epsilon
+            bar.open > level + self.price_epsilon
             for bar in data[left_index + 1 : right_index]
         )
 
@@ -178,7 +183,7 @@ class HorizontalResistance(Pattern):
             (bar.open for bar in middle),
             default=min(data[left.index].open, data[right.index].open),
         )
-        open_ceiling = min(data[left.index].open, data[right.index].open)
+        open_ceiling = candidate.level
         overshoot = sum(max(0.0, point.price - candidate.level) for point in (left, right))
         return {
             "anchor_count": FeatureResult("anchor_count", 2.0, 1.0),
@@ -198,7 +203,14 @@ class HorizontalResistance(Pattern):
             ),
             "open_violation_count": FeatureResult(
                 "open_violation_count",
-                float(self._open_violation_count(data, left.index, right.index)),
+                float(
+                    self._open_violation_count(
+                        data,
+                        left.index,
+                        right.index,
+                        candidate.level,
+                    )
+                ),
                 1.0,
             ),
             "intermediate_touch_count": FeatureResult(

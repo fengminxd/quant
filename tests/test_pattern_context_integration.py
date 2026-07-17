@@ -6,6 +6,9 @@ import pytest
 
 from core.models import Bar, PatternResult
 from factors.pattern_context import PatternContextScorer
+from factors.trade_feasibility import PatternTradeFeasibilityScorer
+from features.trade_feasibility import TransactionCostModel
+from features.trade_plan import PatternTradePlan
 from indicators.swing import PivotDetector, SwingDetector
 from patterns import HorizontalSupport, ThreePointTrendlineSupport
 from tests.test_head_shoulders_top import detector as top_detector
@@ -76,3 +79,39 @@ def test_existing_pattern_results_feed_context_profiles(
     assert evaluation.composite.metadata["pattern_id"] == pattern.pattern_id
     assert evaluation.composite.metadata["selected_factors"]
     assert 0.0 <= evaluation.composite.score <= 100.0
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        three_point_support_case,
+        horizontal_support_case,
+        three_point_resistance_case,
+        horizontal_resistance_case,
+        inverse_head_shoulders_case,
+        head_shoulders_top_case,
+    ],
+)
+def test_existing_pattern_results_feed_trade_feasibility(
+    case: Callable[[], tuple[list[Bar], PatternResult]],
+) -> None:
+    bars, pattern = case()
+    bullish = pattern.pattern_id in {"PATTERN_003", "PATTERN_004", "PATTERN_007"}
+    entry = bars[-1].close
+    plan = PatternTradePlan(
+        "bullish" if bullish else "bearish",
+        entry,
+        entry - 1.0 if bullish else entry + 1.0,
+        entry + 3.0 if bullish else entry - 3.0,
+    )
+    scorer = PatternTradeFeasibilityScorer(
+        costs=TransactionCostModel(0.0, 0.0, 0.0)
+    )
+
+    evaluation = scorer.score(pattern, bars, plan=plan)
+
+    assert evaluation.factor.metadata["pattern_gate_passed"] is True
+    assert evaluation.factor.metadata["active"] is True
+    assert evaluation.factor.metadata["feasible"] is True
+    assert evaluation.factor.metadata["emits_signal"] is False
+    assert evaluation.factor.score == 100.0

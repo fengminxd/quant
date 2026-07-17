@@ -32,12 +32,20 @@ from factors.support_confluence import (
     SupportConfluenceScorer,
 )
 from factors.support_lineage import SupportLineageScore
+from factors.triangle_context import TriangleBearishContinuationScore
+from factors.trade_feasibility import (
+    DEFAULT_MINIMUM_NET_REWARD_RISK,
+    NetRewardRiskScore,
+    PatternTradeFeasibilityEvaluation,
+    PatternTradeFeasibilityScorer,
+)
 
 __all__ = [
     "DEFAULT_PATTERN_FACTOR_PROFILES",
     "AscendingTriangleScore",
     "BullishSupportConfluenceScore",
     "DowntrendStructureScore",
+    "DEFAULT_MINIMUM_NET_REWARD_RISK",
     "EMA99ContextScore",
     "FactorSpec",
     "HammerScore",
@@ -45,14 +53,18 @@ __all__ = [
     "HeadAndShouldersTopScore",
     "InvertedHammerScore",
     "InverseHeadShouldersScore",
+    "NetRewardRiskScore",
     "PatternContextEvaluation",
     "PatternContextScorer",
     "PatternFactorProfile",
+    "PatternTradeFeasibilityEvaluation",
+    "PatternTradeFeasibilityScorer",
     "PriorHighBreakoutScore",
     "PriorLowBreakdownScore",
     "SupportConfluenceEvaluation",
     "SupportConfluenceScorer",
     "SupportLineageScore",
+    "TriangleBearishContinuationScore",
     "ThreePointTrendlineResistanceScore",
     "ThreePointTrendlineSupportScore",
     "TriangleScore",

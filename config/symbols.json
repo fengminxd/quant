@@ -1,6 +1,6 @@
 {
   "default_quote_asset": "USDT",
-  "timeframes": ["15m", "1h", "4h"],
+  "timeframes": ["15m", "1h", "4h", "1d"],
   "history_limit": 2000,
   "symbols": [
     {"name": "BTC", "exchange_symbol": "BTCUSDT", "enabled": true},

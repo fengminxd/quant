@@ -134,10 +134,15 @@ class HorizontalSupport(Pattern):
     ) -> HorizontalSupportCandidate | None:
         swings = self.swing_detector.detect(data)
         swings = self._with_boundary_swings(data, swings)
-        atr = average_true_range(data)[-1]
-        tolerance = max(1e-9, atr * self.atr_tolerance_ratio)
-        candidates = self._double_low_candidates(data, swings, tolerance)
-        candidates.extend(self._breakout_retest_candidates(data, swings, tolerance))
+        atr_values = average_true_range(data)
+        latest_tolerance = max(
+            1e-9,
+            atr_values[-1] * self.atr_tolerance_ratio,
+        )
+        candidates = self._double_low_candidates(data, swings, atr_values)
+        candidates.extend(
+            self._breakout_retest_candidates(data, swings, latest_tolerance)
+        )
         if anchor_index is not None:
             candidates = [
                 candidate for candidate in candidates
@@ -170,13 +175,17 @@ class HorizontalSupport(Pattern):
         self,
         data: Sequence[Bar],
         swings: Sequence[Pivot],
-        tolerance: float,
+        atr_values: Sequence[float],
     ) -> list[HorizontalSupportCandidate]:
         lows = [pivot for pivot in swings if pivot.kind == "low"]
         candidates: list[HorizontalSupportCandidate] = []
         for left, right in combinations(lows, 2):
             if right.index - left.index < self.min_span:
                 continue
+            tolerance = max(
+                1e-9,
+                atr_values[right.index] * self.atr_tolerance_ratio,
+            )
             match = matching_level(
                 lower_support_levels(data[left.index]),
                 lower_support_levels(data[right.index]),
@@ -187,7 +196,7 @@ class HorizontalSupport(Pattern):
             level, level_error = match
             if body_pierce_count(data, left.index, right.index, level) != 0:
                 continue
-            if not all_closes_above_level(data, left.index, right.index, level, tolerance):
+            if not all_closes_above_level(data, left.index, right.index, level):
                 continue
             candidates.append(
                 HorizontalSupportCandidate(

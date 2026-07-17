@@ -59,6 +59,14 @@ def test_ema_is_causal_and_uses_the_requested_period() -> None:
     assert changed[:2] == pytest.approx(values[:2])
 
 
+def test_ema_can_continue_a_prior_causal_state() -> None:
+    bars = bars_from_centers([2.0, 3.0])
+
+    values = exponential_moving_average(bars, period=3, initial_value=1.0)
+
+    assert values == pytest.approx([1.525, 2.2875])
+
+
 def test_uptrend_and_breakout_factors_use_confirmed_swings() -> None:
     bars = bars_from_centers([10, 12, 11, 14, 12, 16, 13, 18, 14, 19])
     features = context_extractor().extract(bars)

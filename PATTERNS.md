@@ -6,6 +6,39 @@
 
 Define chart patterns in a machine-readable specification.
 
+## Timeframe Levels and Structure Search
+
+The production structure scale is defined by complete K-line intervals, not by
+wall-clock labels alone:
+
+-   A tradable structure spans 40-160 intervals on its owning level.
+-   Trading levels are ordered `15m -> 1h -> 4h`.
+-   A `15m` span above 160 is promoted by elapsed time to `1h`; if the
+    normalized `1h` span is still above 160, it is promoted again to `4h`.
+-   A `1h` span above 160 is promoted to `4h`.
+-   `1d` is collected only for higher-timeframe trend context. It is not a
+    pattern-search or trade-entry level, so a `4h` structure above 160 does not
+    become a tradable daily structure.
+
+`PatternDetector.poll()` applies the three trading levels to every latest-bar
+polling pass. Each detector sees only the trailing 161 visible bars, and the
+polling layer rejects any detected anchor geometry outside 40-160 intervals.
+`poll_at()` freezes the same window at a historical index for walk-forward and
+rolling tests. Pattern modules retain raw `detect()` as a research API; live
+and backtest trading decisions must use the constrained polling API.
+
+The market-behavior interpretation is scale continuity: once a structure is
+too wide for its current auction horizon, its information belongs to the next
+higher aggregation rather than remaining a slow, stale low-timeframe setup.
+Daily direction may gate or score a lower-timeframe setup, but cannot create an
+entry by itself.
+
+After detection, `PatternTradeFeasibilityScorer` may derive a structural stop,
+price-action target, and cost-adjusted net reward/risk. This is a separate
+score-only feasibility layer: it cannot change whether a Pattern exists and
+cannot emit a trade signal. Triangle and head-and-shoulders structures remain
+inactive there until their boundary or neckline confirmation occurs.
+
 ## Standard Template
 
 ``` yaml
@@ -86,8 +119,12 @@ outside either projected boundary.
 
 ## Geometry
 
--   At least 3 confirmed swing highs on the fitted upper boundary
--   At least 3 confirmed swing lows on the fitted lower boundary
+-   The fitted upper boundary has 2 or 3 independent confirmation clusters
+-   The fitted lower boundary has 2 or 3 independent confirmation clusters
+-   At least one boundary has 3 confirmations; the 2+2 combination is invalid
+-   Selected confirmations alternate upper/lower; repeated same-side contacts
+    without an intervening opposite-boundary confirmation are alternatives for
+    one market leg, not independent confirmations
 -   Upper slope is horizontal or negative
 -   Lower slope is horizontal or positive
 -   The two fitted boundaries overlap for at least 5 bars
@@ -96,13 +133,28 @@ outside either projected boundary.
 
 ## Detection Rules
 
--   Evaluate all 3-point combinations among the latest 8 confirmed highs/lows.
+-   Cluster nearby same-side pivots before fitting. Pivots no more than 5
+    complete intervals apart form one confirmation cluster.
+-   A nearby qualifying shadow contact may represent the cluster's first touch,
+    but additional shadows in that cluster are contact evidence rather than new
+    independent confirmations.
+-   A recent closed upper- or lower-shadow contact may provide the latest
+    boundary confirmation immediately at that close; it does not wait for a
+    right-side Swing window. The post-Pattern factor separately checks any
+    directional EMA99 rejection. Later Swing confirmation only strengthens the
+    geometric evidence.
+-   Evaluate all 2-point and 3-point combinations among the latest 12 clustered
+    highs/lows, then reject every 2+2 boundary pair.
 -   Each boundary spans at least 5 complete bar intervals.
 -   Boundary regression RMSE must be no more than 0.5 ATR.
 -   A normalized slope within +/-0.02 ATR per bar is treated as horizontal.
--   No confirmed swing may violate a fitted boundary beyond the fit tolerance.
--   Prefer the longest overlapping boundary span, then stronger convergence and fit.
+-   No confirmed swing within its boundary's own anchor span may violate that
+    boundary by more than 0.25 ATR.
+-   Prefer the latest active structure, then overlap span, confirmation count,
+    fit, convergence, and total span.
 -   Score upside breakouts and downside breakdowns symmetrically.
+-   Geometry determines `detected`; the score remains an independent quality
+    measure and `quality_threshold_passed` records whether it reaches 50.
 
 ## Required Features
 
@@ -110,6 +162,9 @@ outside either projected boundary.
 -   lower_slope_atr_per_bar
 -   upper_fit_error_atr
 -   lower_fit_error_atr
+-   upper_confirmation_count
+-   lower_confirmation_count
+-   boundary_confirmation_score
 -   boundary_direction_score
 -   boundary_fit_score
 -   convergence_ratio
@@ -137,6 +192,31 @@ TriangleScore
 SUI 4h from 2026-06-29 04:00 to 2026-07-14 08:00 UTC+8 is a
 symmetrical triangle under this rule. Its upper and lower normalized slopes are
 -0.04538 and +0.04326 ATR per bar, and its structural score is 58.7907.
+
+MUUSDT 4h from 2026-07-05 20:00 through 2026-07-15 08:00 UTC+8 is a
+symmetrical converging triangle window. Its upper confirmations are 2026-07-05
+20:00, 2026-07-09 20:00, and 2026-07-15 08:00; its lower confirmations are
+2026-07-08 16:00 and 2026-07-13 20:00. Nearby same-boundary shadows are folded
+into those confirmation clusters rather than counted as separate anchors. The
+selected anchors span 57 complete intervals and the third upper anchor has a
+high of 1006.18 and close of 1000.30. Its closed upper-shadow contact is
+actionable immediately rather than waiting two more 4h bars. At that close
+EMA99 is 1001.2692268: the upper shadow trades above EMA99 while the body and
+close remain below it. The preceding decline is measured from the 2026-06-25
+20:00 high to the first triangle anchor at 16.23 ATR. Prior lower highs, price
+acceptance below a falling EMA99, and 31.17% boundary compression produce a
+`TriangleBearishContinuationScore` of 76.3654. This activates a bearish trade
+plan at the third upper close; a later downside break is confirmation rather
+than an entry prerequisite.
+
+NEARUSDT 4h from 2026-07-01 08:00 through 2026-07-17 16:00 UTC+8 is an
+ascending triangle with three lower confirmations at 2026-07-01 08:00,
+2026-07-13 12:00, and the final closed lower-shadow contact at 2026-07-17
+16:00. The canonical upper confirmations are 2026-07-03 20:00 and 2026-07-15
+20:00; 2026-07-07 00:00 is also a valid alternative first upper contact. The
+two early upper wicks belong to the same market leg because no lower-boundary
+confirmation separates them, so they are not counted together as two
+independent confirmations. The selected anchors span 98 complete intervals.
 
 ## Python Module
 
@@ -222,6 +302,19 @@ retest hypothesis.
 -   Breakout-retest rule: earlier high/open resistance aligned with a later
     swing-low/close support contact
 
+For the double-low rule, every non-anchor candle between the two support
+anchors must close strictly above the matched common support level. This rule
+does not use ATR tolerance for an intervening close at or below that level.
+The price-alignment tolerance is frozen at the right Swing Low's own causal ATR
+so later confirmation candles cannot alter already-observed anchor geometry.
+
+BTCUSDT 1h provides a reference double-bottom support case from
+2026-06-25 21:00 to 2026-07-01 09:00 UTC+8. The confirmed Swing Lows are
+58,030.0 and 57,758.6, yielding a common support level of 57,894.3 across 132
+complete bars. The lowest intermediate close is 58,356.2, strictly above the
+common support. The second Swing Low is confirmed at 2026-07-01 14:00 after
+five right-side bars; the structural score is 96.7440.
+
 ## Breakout-Retest Rules
 
 -   Find an accepted close above the aligned resistance after the first anchor.
@@ -273,6 +366,7 @@ accepted through it and invalidate the candidate.
 ## Detection Rules
 
 -   Evaluate all swing-high combinations; the three points need not be consecutive.
+-   Keep Swing denoising independent from the 10-bar anchor-spacing rule.
 -   The middle swing high must fit the P1-P3 line within the configured ATR tolerance.
 -   At each anchor the line must pass through the upper shadow or touch the open.
 -   No non-anchor candle body may be crossed between P1 and P3.
@@ -299,6 +393,15 @@ accepted through it and invalidate the candidate.
 
 ThreePointTrendlineResistanceScore
 
+## Reference Case
+
+BTCUSDT 4h forms a three-point descending resistance through 2026-05-06 16:00,
+2026-05-11 04:00, and 2026-05-15 00:00 UTC+8. The Swing Highs are 82,828.7,
+82,460.5, and 81,999.0. The anchors span 27 and 23 bars, for a 50-bar total
+span; the line slope is -16.594 per 4h bar. The third anchor is causally
+confirmed at 2026-05-15 08:00. Fit error is 0.0285921 ATR, no non-anchor body
+crosses the line, and the structural score is 94.2852.
+
 ## Invalidation
 
 Any candle body crossing the line inside the anchor span.
@@ -316,8 +419,8 @@ patterns/three_point_trendline_resistance.py
 Two widely separated swing highs rejected from one horizontal price level show
 repeated seller defense. Requiring all intervening highs below the level avoids
 mistaking an already penetrated price zone for intact resistance. The separate
-open-price ceiling rejects periods where value was accepted above either
-anchor's opening price even if the wick rule still appears valid.
+open-price check records whether value was accepted above the resistance level;
+an anchor's opening price is not itself the resistance boundary.
 
 ## Geometry
 
@@ -325,7 +428,7 @@ anchor's opening price even if the wick rule still appears valid.
 -   One shared horizontal level touching each anchor open or upper shadow
 -   P1-P2 \>= 40 complete bar intervals
 -   Every intervening high \<= the horizontal level
--   Every intervening open \<= min(P1 open, P2 open)
+-   Every intervening open \<= the horizontal resistance level
 
 ## Detection Rules
 
@@ -352,10 +455,19 @@ anchor's opening price even if the wick rule still appears valid.
 
 HorizontalResistanceScore
 
+## Reference Case
+
+SOLUSDT 1h forms horizontal resistance between 2026-07-04 12:00 and
+2026-07-07 05:00 UTC+8. The confirmed swing highs are 83.96 and 83.75, so the
+shared upper-shadow contact level is 83.75. The anchors span 65 complete bars.
+The maximum intervening high is 83.57 and the maximum intervening open is
+83.44; neither trades above the resistance level. The second anchor is
+causally confirmed after two right-side bars at 2026-07-07 07:00. Its
+`HorizontalResistanceScore` is 81.4977.
+
 ## Invalidation
 
-Any intervening high above the level, or any intervening open above the lower
-anchor open.
+Any intervening high or open above the horizontal resistance level.
 
 ## Python Module
 
@@ -506,6 +618,32 @@ acceptance beneath the intervening demand boundary.
 ## Factor Mapping
 
 HeadAndShouldersTopScore
+
+## Reference Case Audit
+
+SOLUSDT 1h, UTC+8 from 2026-07-09 09:00 through 2026-07-11 23:00
+contains the reported local top and right-shoulder EMA99 rejection. On the
+Binance USD-M feed, the 2026-07-11 23:00 right-shoulder candle is O=78.44,
+H=78.86, C=78.34 and the causal EMA99 is 78.55594103 after warm-up from
+2026-05-01. Its whole candle body remains below EMA99 while the upper shadow
+trades through it. The strict geometry is:
+
+-   left shoulder: 2026-07-09 15:00 at 78.82;
+-   head: 2026-07-10 18:00 at 79.64;
+-   right shoulder: 2026-07-11 23:00 at 78.86;
+-   neckline lows: 2026-07-09 20:00 at 77.20 and
+    2026-07-11 09:00 at 77.42.
+
+The 23:00 right shoulder and EMA99 rejection are observable at that candle's
+close, but the strict Swing anchor becomes causally confirmed at 2026-07-12
+04:00 after five right-side bars, with a structure score of 81.9820. A close
+below the projected neckline at 2026-07-12 07:00 raises the confirmed score to
+96.9820. The regression preserves the distinction between the right-shoulder
+event time and its later Swing confirmation time.
+This is a bounded research-window result. With the full trailing 161-bar
+production history, the left shoulder is not a new 40-bar high and an earlier
+already-confirmed top is selected; the reported local structure therefore does
+not replace the active production candidate under the current ranking rules.
 
 ## Invalidation
 

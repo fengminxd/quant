@@ -89,9 +89,15 @@ def test_accepts_open_or_upper_shadow_anchor_contacts() -> None:
     assert open_result.metadata["contact_types"] == ("open", "open")
 
 
-def test_rejects_intermediate_penetration_and_open_violation() -> None:
+def test_rejects_intermediate_penetration() -> None:
     assert detector().detect(resistance_bars(penetration=True)).detected is False
-    assert detector().detect(resistance_bars(open_violation=True)).detected is False
+
+
+def test_allows_intermediate_open_above_lower_anchor_open_but_below_level() -> None:
+    result = detector().detect(resistance_bars(open_violation=True))
+
+    assert result.detected is True
+    assert result.features["open_violation_count"].value == 0.0
 
 
 def test_second_swing_must_be_confirmed_without_lookahead() -> None:

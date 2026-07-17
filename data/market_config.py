@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.timeframes import TRADING_TIMEFRAMES, TREND_TIMEFRAMES
+
 
 DEFAULT_SYMBOL_CONFIG = Path("config/symbols.json")
 DEFAULT_SUPABASE_CONFIG = Path("config/supabase.json")
@@ -36,6 +38,18 @@ class MarketDataConfig:
 
         return tuple(symbol for symbol in self.symbols if symbol.enabled)
 
+    @property
+    def trading_timeframes(self) -> tuple[str, ...]:
+        """Return configured levels allowed to produce trading structures."""
+
+        return tuple(value for value in self.timeframes if value in TRADING_TIMEFRAMES)
+
+    @property
+    def trend_timeframes(self) -> tuple[str, ...]:
+        """Return configured trend-context-only levels."""
+
+        return tuple(value for value in self.timeframes if value in TREND_TIMEFRAMES)
+
 
 @dataclass(frozen=True)
 class SupabaseConfig:
@@ -53,7 +67,10 @@ def load_market_data_config(path: str | Path = DEFAULT_SYMBOL_CONFIG) -> MarketD
     payload = _load_json(path)
     default_quote = str(payload.get("default_quote_asset", "USDT")).upper()
     symbols = tuple(_parse_symbol(item, default_quote) for item in payload["symbols"])
-    timeframes = tuple(str(value) for value in payload.get("timeframes", ["15m", "1h", "4h"]))
+    timeframes = tuple(
+        str(value)
+        for value in payload.get("timeframes", ["15m", "1h", "4h", "1d"])
+    )
     history_limit = int(payload.get("history_limit", 2000))
     return MarketDataConfig(symbols=symbols, timeframes=timeframes, history_limit=history_limit)
 

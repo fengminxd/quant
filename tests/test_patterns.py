@@ -38,26 +38,38 @@ def trendline_bars() -> list[Bar]:
 
 
 def triangle_bars() -> list[Bar]:
-    values = [
-        (18, 14),
-        (19, 13),
-        (20.1, 15),
-        (18, 14),
-        (17, 15),
-        (18, 16),
-        (20.0, 16),
-        (18, 15),
-        (17, 16),
-        (18, 17),
-        (20.1, 17),
-        (18, 16),
-        (17, 17),
-        (18, 18),
-        (20.0, 18),
-        (20.8, 19.2),
+    high_indexes = {2, 10, 18}
+    low_indexes = {6, 14, 22}
+    keypoints = [
+        (0, 15.0),
+        (2, 20.0),
+        (6, 10.0),
+        (10, 20.0),
+        (14, 12.0),
+        (18, 20.0),
+        (22, 14.0),
+        (24, 17.0),
     ]
-    bars = [make_bar(i, high, low, close=min(high, 19.8)) for i, (high, low) in enumerate(values)]
-    bars[-1] = make_bar(15, 20.8, 19.2, close=20.6)
+    bars: list[Bar] = []
+    segment = 0
+    for index in range(25):
+        while segment + 1 < len(keypoints) - 1 and index > keypoints[segment + 1][0]:
+            segment += 1
+        left_index, left_price = keypoints[segment]
+        right_index, right_price = keypoints[segment + 1]
+        center = left_price + (right_price - left_price) * (
+            index - left_index
+        ) / (right_index - left_index)
+        if index in high_indexes:
+            high = 20.0
+            low = 19.3
+        elif index in low_indexes:
+            low = 10.0 + 0.25 * (index - 6)
+            high = low + 0.7
+        else:
+            high = center + 0.1
+            low = center - 0.1
+        bars.append(make_bar(index, high, low, close=(high + low) / 2.0))
     return bars
 
 
@@ -275,6 +287,24 @@ def test_horizontal_support_rejects_short_span_and_extra_pierces() -> None:
     assert detector.detect(horizontal_double_low_bars(pierced=True)).detected is False
     assert detector.detect(horizontal_breakout_retest_bars(extra_pierce=True)).detected is False
     assert detector.detect(horizontal_breakout_retest_bars(weak_above_close=True)).detected is False
+
+
+def test_double_low_rejects_close_below_common_support_even_within_old_tolerance() -> None:
+    bars = horizontal_double_low_bars()
+    bar = bars[30]
+    bars[30] = Bar(
+        bar.timestamp,
+        9.95,
+        10.05,
+        9.80,
+        9.95,
+        bar.volume,
+        bar.timeframe,
+    )
+    swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
+    detector = HorizontalSupport(swing, atr_tolerance_ratio=0.1)
+
+    assert detector.detect(bars).detected is False
 
 
 def test_pattern_detector_runs_registered_detectors() -> None:

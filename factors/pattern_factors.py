@@ -40,7 +40,8 @@ class TriangleScore(Factor):
         """Calculate a direction-neutral converging-triangle score."""
 
         score = clamp(
-            0.20 * _value(features, "boundary_direction_score")
+            0.10 * _value(features, "boundary_direction_score")
+            + 0.10 * _value(features, "boundary_confirmation_score")
             + 0.20 * _value(features, "boundary_fit_score")
             + 0.20 * _value(features, "convergence_score")
             + 0.15 * _value(features, "atr_compression")

@@ -49,12 +49,11 @@ def all_closes_above_level(
     left_index: int,
     right_index: int,
     level: float,
-    tolerance: float,
 ) -> bool:
-    """Return whether the level held on every intermediate close."""
+    """Return whether every intermediate close is strictly above support."""
 
     return all(
-        bar.close + tolerance >= level
+        bar.close > level
         for bar in data[left_index + 1 : right_index]
     )
 

@@ -5,6 +5,75 @@
 detect(data)-\>PatternResult extract_features(data)-\>dict
 calculate_score(features)-\>float
 
+PatternDetector.poll(data_by_timeframe)-\>list[PatternPollResult]
+
+PatternDetector.poll_at(data, timeframe, as_of_index)-\>list[PatternPollResult]
+
+`poll()` is the production structure-search entry point. It checks `15m`,
+`1h`, and `4h` in order, excludes `1d`, supplies no more than 161 visible bars
+(160 complete intervals), and emits only structures spanning 40-160 intervals.
+`poll_at()` applies the same rule to a historical as-of index for no-look-ahead
+backtests. `PatternPollResult.window_start_index` maps window-local pattern
+geometry back to the source series.
+
+The raw `detect()` method remains a timeframe-agnostic research primitive and
+does not perform timeframe promotion or production window enforcement.
+
+`Triangle.detect()` fits 2-point and 3-point boundaries after grouping nearby
+same-side contacts into confirmation clusters. Valid confirmation combinations
+are 3+3, 3+2, and 2+3; 2+2 is rejected before feature or factor calculation.
+Selected confirmations must alternate between boundaries, and the latest
+closed upper or lower wick may confirm its boundary without future bars.
+
+## Timeframe Hierarchy
+
+timeframe_level(timeframe)-\>TimeframeLevel
+
+resolve_structure_span(timeframe, span_bars)-\>StructureSpanResolution
+
+Trading levels are `15m`, `1h`, and `4h`; `1d` has the `trend_context` role.
+Spans above 160 intervals are normalized by elapsed time and promoted through
+the trading hierarchy. Promotion past `4h` terminates as non-tradable daily
+trend context.
+
+`MarketDataConfig.trading_timeframes` and `trend_timeframes` expose these roles
+without preventing the collector from storing all four configured datasets.
+
+bearish_triangle_continuation_features(data, pattern)-\>dict
+
+TriangleBearishContinuationScore.calculate(features)-\>FactorResult
+
+Triangle continuation context reads window-local anchors through
+`window_start_index`, freezes prior trend at the first anchor, and freezes EMA99
+rejection at the third upper anchor. Swing-confirmation bars may establish that
+the anchor is a pivot but cannot change its feature values.
+
+## Post-Pattern Trade Feasibility
+
+PatternTradePlanExtractor.extract(pattern_result, data, as_of_index, plan)
+    -\>tuple[PatternTradePlan | None, int, float]
+
+trade_feasibility_features(plan, atr, minimum_net_reward_risk, costs)-\>dict
+
+NetRewardRiskScore.calculate(features)-\>FactorResult
+
+PatternTradeFeasibilityScorer.evaluate(pattern, data, as_of_index)
+    -\>PatternTradeFeasibilityEvaluation
+
+PatternTradeFeasibilityScorer.score(pattern_result, data, as_of_index, plan)
+    -\>PatternTradeFeasibilityEvaluation
+
+PatternTradeFeasibilityScorer.score_detected(pattern_results, data)-\>list
+
+This layer runs after Pattern detection and does not change Pattern quality.
+Default plans use structural invalidation and price-action targets; callers may
+provide an explicit plan for execution-specific entry/retest logic. A triangle
+may activate either on a boundary break or on an active bearish-continuation
+context at the third upper EMA99 rejection; head-and-shoulders still requires
+neckline confirmation. `as_of_index` truncation and polling-window offsets
+preserve causal geometry. The result exposes `active`, `feasible`, cost
+assumptions, and `emits_signal=False` metadata.
+
 ## Feature
 
 compute(data)-\>FeatureResult

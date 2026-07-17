@@ -8,14 +8,24 @@ from core.models import Bar
 from data.validation import validate_bars
 
 
-def exponential_moving_average(data: Sequence[Bar], period: int = 99) -> list[float]:
-    """Return EMA values available at each corresponding bar close."""
+def exponential_moving_average(
+    data: Sequence[Bar],
+    period: int = 99,
+    *,
+    initial_value: float | None = None,
+) -> list[float]:
+    """Return causal EMA values, optionally continuing a prior EMA state."""
 
     if period <= 0:
         raise ValueError("period must be positive")
     validate_bars(data)
     alpha = 2.0 / (period + 1.0)
-    values = [data[0].close]
+    first = (
+        data[0].close
+        if initial_value is None
+        else alpha * data[0].close + (1.0 - alpha) * initial_value
+    )
+    values = [first]
     for bar in data[1:]:
         values.append(alpha * bar.close + (1.0 - alpha) * values[-1])
     return values

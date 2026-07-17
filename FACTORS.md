@@ -56,6 +56,7 @@ breakout through either side.
 ## Inputs
 
 -   boundary_direction_score
+-   boundary_confirmation_score
 -   boundary_fit_score
 -   convergence_score
 -   atr_compression
@@ -65,13 +66,17 @@ breakout through either side.
 ## Formula
 
 ``` text
-0.20*boundary_direction
+0.10*boundary_direction
++0.10*boundary_confirmation
 +0.20*boundary_fit
 +0.20*convergence
 +0.15*atr_compression
 +0.10*volume_contraction
 +0.15*breakout_strength
 ```
+
+`boundary_confirmation_score` is 100 for a 3+3 structure and 80 for either
+3+2 or 2+3. A 2+2 structure is invalid and never reaches factor calculation.
 
 ## Output
 
@@ -83,6 +88,56 @@ breakout through either side.
 -   Out-of-sample
 -   Transaction cost
 -   Profit factor
+
+------------------------------------------------------------------------
+
+# FACTOR_002A TriangleBearishContinuationScore
+
+## Market Logic
+
+A converging triangle is direction neutral by itself. It becomes a bearish
+continuation candidate when it pauses an established decline, price remains
+accepted below a falling EMA99, and the third upper-boundary candle probes
+above EMA99 only through its upper shadow before closing back below it. This
+models failed acceptance at dynamic supply rather than an indicator crossover.
+
+## Inputs
+
+-   prior_lower_high_ratio
+-   prior_lower_low_ratio
+-   prior_decline_atr
+-   prior_trend_efficiency_signed
+-   prior_ema99_distance_atr
+-   prior_ema99_slope_atr
+-   prior_ema99_above_close_ratio
+-   upper_third_high_above_ema_atr
+-   upper_third_close_below_ema_atr
+-   upper_third_ema_wick_rejection
+-   triangle_compression_ratio
+
+## Formula
+
+``` text
+0.25*prior_structure
++0.30*prior_ema_trend
++0.30*upper_ema_rejection
++0.15*triangle_compression
+```
+
+## Output
+
+0-100 score. An active score identifies
+`bearish_continuation_entry_candidate`: the established decline plus the third
+upper-boundary EMA99 wick rejection is sufficient to activate a bearish trade
+plan. A downside boundary break is subsequent confirmation, not an entry
+prerequisite. The factor remains score-only and does not itself emit Sell.
+
+## Validation
+
+-   Forward-return IC and RankIC after triangle confirmation
+-   Separate pending candidates from accepted downside breaks
+-   Walk-forward/OOS by timeframe and market regime
+-   Fee, slippage, funding, and false-break sensitivity
 
 ------------------------------------------------------------------------
 
@@ -136,8 +191,9 @@ repeated upper-shadow rejection provide stronger structural resistance evidence.
 
 ## Market Logic
 
-Longer-lived, closely aligned resistance with clean price clearance and low
-intervening opens is stronger evidence of persistent seller defense.
+Longer-lived, closely aligned resistance with clean price clearance and
+intervening opens farther below the actual resistance level is stronger
+evidence of persistent seller defense.
 
 ## Inputs
 
@@ -390,3 +446,79 @@ is stronger evidence that buyers repeatedly defend progressively higher prices.
 -   Walk-forward and rolling out-of-sample tests
 -   Fee, slippage, and funding sensitivity
 -   Monte Carlo trade-order and execution-cost resampling
+
+------------------------------------------------------------------------
+
+# FACTOR_008 NetRewardRiskScore
+
+## Market Logic
+
+A valid chart pattern is not automatically a viable trade. After pattern
+detection, the nearest structural invalidation and price-action target define
+the payoff geometry. Execution and holding costs must then increase downside
+risk and reduce upside reward before the setup is considered feasible.
+
+## Pattern Gate and Default Plan
+
+-   Trendline support/resistance: projected line stop and nearest confirmed
+    opposing swing liquidity target.
+-   Horizontal support/resistance: level-zone stop and nearest confirmed
+    opposing swing liquidity target.
+-   Triangle breakout: stop behind the broken boundary and target by initial
+    triangle-height projection.
+-   Bearish continuation triangle: the third upper-boundary wick rejection of
+    EMA99 activates the plan without a lower-boundary break; stop beyond the
+    upper boundary and target the contemporaneous lower boundary.
+-   Inverse head-and-shoulders/head-and-shoulders top: activated only after
+    neckline confirmation; stop beyond the right shoulder and target by the
+    head-to-neckline measured move.
+-   Default stop buffer is 0.20 ATR.
+
+## Inputs
+
+-   plan_available
+-   entry_price
+-   stop_price
+-   target_price
+-   gross_risk
+-   gross_reward
+-   net_risk
+-   net_reward
+-   gross_reward_risk
+-   net_reward_risk
+-   minimum_net_reward_risk
+-   stop_distance_atr
+-   target_distance_atr
+-   estimated_cost_r
+
+## Net Formula
+
+``` text
+net_risk = gross_risk + entry_cost + stop_exit_cost + funding_cost
+net_reward = gross_reward - entry_cost - target_exit_cost - funding_cost
+net_reward_risk = net_reward / net_risk
+```
+
+Default cost assumptions are configurable: 0.05% fee per side, 0.02% slippage
+per side, and zero funding until a holding-period estimate is supplied.
+
+## Score
+
+``` text
+net R <= 1.0  -> 0
+net R = 1.5   -> 40
+net R = 2.0   -> 70
+net R >= 3.0  -> 100
+```
+
+Linear interpolation applies between knots. Feasibility is a separate gate:
+1.8 net R for trendline rules and 2.0 net R for triangle, horizontal, and
+head-and-shoulders rules. The factor never emits Buy/Sell.
+
+## Validation
+
+-   Compare gross-R and net-R cohort expectancy
+-   Walk-forward and rolling OOS by pattern, timeframe, and market regime
+-   Replay ambiguous stop/target bars on a lower timeframe
+-   Fee, slippage, funding, and stop-gap sensitivity
+-   MFE, MAE, time-to-target, Sharpe, Sortino, and maximum drawdown

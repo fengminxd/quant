@@ -46,7 +46,7 @@ class ThreePointTrendlineResistance(Pattern):
             raise ValueError("span constraints must be positive")
         if atr_tolerance_ratio < 0:
             raise ValueError("atr_tolerance_ratio must be non-negative")
-        self.swing_detector = swing_detector or SwingDetector(min_bars=min_leg_span)
+        self.swing_detector = swing_detector or SwingDetector(min_bars=3)
         self.min_total_span = min_total_span
         self.min_leg_span = min_leg_span
         self.atr_tolerance_ratio = atr_tolerance_ratio

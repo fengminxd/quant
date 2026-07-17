@@ -22,6 +22,10 @@ Reusable quantitative features shared by all patterns.
   higher_low_score      Rising lows score        Regression on lows
   regression_line       Fitted boundary          Least-squares slope/intercept/RMSE
   triangle_convergence  Boundary compression     (initial gap-final gap)/initial gap
+  boundary_confirmation Independent evidence      2 or 3 clusters per boundary; total >=5
+  confirmation_cluster Nearby wick grouping       Same-side contacts within 5 intervals
+  boundary_alternation Independent market legs     Opposite boundary between same-side confirmations
+  boundary_breach      Line integrity               Max adverse swing penetration / ATR
   market_structure      HH/HL or LH/LL            Confirmed swing comparisons
   ema99_context         Accepted-value context    Price/slope/persistence vs EMA99
   prior_level_state     Breakout/breakdown         Close and wick distance / ATR
@@ -32,6 +36,14 @@ Reusable quantitative features shared by all patterns.
   neckline_source      Cross-pattern lineage        Horizontal source in neckline
   retest_anchor        Cross-pattern lineage        Retest equals trendline P1
   support_lineage      Sequential structure          Both index links confirmed
+  prior_triangle_trend Pre-pattern market behavior    LH/LL + causal EMA99 context
+  prior_decline_window Fixed pre-pattern decline       60 bars ending at first anchor
+  upper_ema_rejection  Reusable supply rejection      high>EMA99>body_top/close
+  triangle_span        Owning-cycle geometry           max(anchor)-min(anchor)
+  structural_trade_plan Post-pattern execution geometry entry/stop/price-action target
+  gross_reward_risk    Unadjusted payoff geometry       reward distance/risk distance
+  net_reward_risk      Executable payoff geometry       net reward/net risk after costs
+  estimated_cost_r     Cost burden in risk units        execution and holding cost/gross risk
 
 ## Rules
 
