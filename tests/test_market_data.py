@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Sequence
 
 from data.candle_cache import CandleCache
-from data.candles import Candle
+from data.candles import Candle, timeframe_to_milliseconds
 from data.market_config import MarketDataConfig, SymbolConfig
 from data.market_data_service import MarketDataService
 
@@ -15,7 +15,7 @@ def make_candle(symbol: SymbolConfig, timeframe: str, open_time: int) -> Candle:
         exchange_symbol=symbol.exchange_symbol,
         timeframe=timeframe,
         open_time=open_time,
-        close_time=open_time + 59_999,
+        close_time=open_time + timeframe_to_milliseconds(timeframe) - 1,
         open=10.0,
         high=11.0,
         low=9.0,
@@ -65,8 +65,20 @@ class FakeStore:
     def __init__(self, rows: Sequence[Candle] = ()) -> None:
         self.rows = {(row.symbol, row.timeframe, row.open_time): row for row in rows}
 
-    async def latest_open_time(self, symbol: str, timeframe: str) -> int | None:
-        times = [time for row_symbol, row_tf, time in self.rows if row_symbol == symbol and row_tf == timeframe]
+    async def latest_closed_open_time(
+        self,
+        symbol: str,
+        timeframe: str,
+        max_open_time: int,
+    ) -> int | None:
+        times = [
+            time
+            for (row_symbol, row_tf, time), row in self.rows.items()
+            if row_symbol == symbol
+            and row_tf == timeframe
+            and row.is_closed
+            and time <= max_open_time
+        ]
         return max(times) if times else None
 
     async def recent_candles(self, symbol: str, timeframe: str, limit: int) -> list[Candle]:
@@ -91,7 +103,7 @@ def test_bootstrap_fetches_2000_when_symbol_has_no_data() -> None:
 
     asyncio.run(service.bootstrap_history())
 
-    assert exchange.calls[0]["limit"] == 2000
+    assert exchange.calls[0]["limit"] == 2001
     assert len(service.cache.get("BTC", "15m")) == 2000
 
 
@@ -106,7 +118,7 @@ def test_bootstrap_backfills_from_latest_open_time() -> None:
     asyncio.run(service.bootstrap_history())
 
     assert exchange.calls[0]["start_time"] == 900_000
-    assert len(service.cache.get("BTC", "15m")) == 3
+    assert len(service.cache.get("BTC", "15m")) == 2
 
 
 def test_bootstrap_skips_symbols_that_are_not_usdt_perpetuals() -> None:

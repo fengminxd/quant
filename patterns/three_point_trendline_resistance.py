@@ -79,6 +79,7 @@ class ThreePointTrendlineResistance(Pattern):
             },
             metadata={
                 "rule": "strict_three_point_descending_resistance",
+                "detected_at_index": points[2].confirmed_at,
                 "timestamp_semantics": "bar_open_time",
                 "valid_triplet_count": candidate.valid_triplet_count,
             },

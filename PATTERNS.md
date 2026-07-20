@@ -133,8 +133,13 @@ outside either projected boundary.
 
 ## Detection Rules
 
--   Cluster nearby same-side pivots before fitting. Pivots no more than 5
-    complete intervals apart form one confirmation cluster.
+-   Within one market leg, nearby same-side pivots no more than 5 complete
+    intervals apart form one noise/contact cluster. An intervening opposite
+    contact candidate prevents this early merge so a later valid boundary pair
+    can determine whether it actually starts a new market leg.
+-   Re-cluster the chosen wick representatives under the same market-leg rule.
+    Final confirmation independence comes from selected upper/lower anchors
+    alternating, not from bar distance alone.
 -   A nearby qualifying shadow contact may represent the cluster's first touch,
     but additional shadows in that cluster are contact evidence rather than new
     independent confirmations.
@@ -143,13 +148,31 @@ outside either projected boundary.
     right-side Swing window. The post-Pattern factor separately checks any
     directional EMA99 rejection. Later Swing confirmation only strengthens the
     geometric evidence.
--   Evaluate all 2-point and 3-point combinations among the latest 12 clustered
+-   Evaluate all 2-point and 3-point combinations among the latest 16 clustered
     highs/lows, then reject every 2+2 boundary pair.
 -   Each boundary spans at least 5 complete bar intervals.
 -   Boundary regression RMSE must be no more than 0.5 ATR.
+-   Every selected anchor must be within 0.5 ATR of both the fitted regression
+    boundary and the direct first-to-last anchor line. This is a hard contact
+    rule; a low average RMSE cannot hide one displaced middle anchor.
 -   A normalized slope within +/-0.02 ATR per bar is treated as horizontal.
 -   No confirmed swing within its boundary's own anchor span may violate that
     boundary by more than 0.25 ATR.
+-   Between every two consecutive same-side anchors there must be exactly one
+    selected anchor on the opposite boundary. Other wick contacts in that same
+    market leg are alternative anchor choices, not extra confirmations, unless
+    an intervening opposite-boundary anchor separates them into different legs.
+-   Every two chronologically adjacent selected anchors, one upper and one
+    lower, must be at least 10 complete candle intervals apart.
+-   Across that complete same-side anchor interval, all candle bodies must stay
+    inside the projected opposite boundary, including the projection before or
+    after the opposite boundary's own terminal anchor. Opposite-side shadows
+    may touch or pierce the boundary.
+-   Between each side's first and last selected anchors, every non-anchor candle
+    body must remain inside both the fitted regression boundary and the direct
+    first-to-last anchor line. Upper shadows and lower shadows may pierce their
+    respective boundaries; body acceptance beyond a boundary invalidates the
+    candidate.
 -   Prefer the latest active structure, then overlap span, confirmation count,
     fit, convergence, and total span.
 -   Score upside breakouts and downside breakdowns symmetrically.
@@ -193,21 +216,11 @@ SUI 4h from 2026-06-29 04:00 to 2026-07-14 08:00 UTC+8 is a
 symmetrical triangle under this rule. Its upper and lower normalized slopes are
 -0.04538 and +0.04326 ATR per bar, and its structural score is 58.7907.
 
-MUUSDT 4h from 2026-07-05 20:00 through 2026-07-15 08:00 UTC+8 is a
-symmetrical converging triangle window. Its upper confirmations are 2026-07-05
-20:00, 2026-07-09 20:00, and 2026-07-15 08:00; its lower confirmations are
-2026-07-08 16:00 and 2026-07-13 20:00. Nearby same-boundary shadows are folded
-into those confirmation clusters rather than counted as separate anchors. The
-selected anchors span 57 complete intervals and the third upper anchor has a
-high of 1006.18 and close of 1000.30. Its closed upper-shadow contact is
-actionable immediately rather than waiting two more 4h bars. At that close
-EMA99 is 1001.2692268: the upper shadow trades above EMA99 while the body and
-close remain below it. The preceding decline is measured from the 2026-06-25
-20:00 high to the first triangle anchor at 16.23 ATR. Prior lower highs, price
-acceptance below a falling EMA99, and 31.17% boundary compression produce a
-`TriangleBearishContinuationScore` of 76.3654. This activates a bearish trade
-plan at the third upper close; a later downside break is confirmation rather
-than an entry prerequisite.
+MUUSDT 4h from 2026-07-05 20:00 through 2026-07-15 08:00 UTC+8 is no
+longer a production triangle under the 10-bar market-leg rule. Its ordered
+upper/lower anchors contain adjacent gaps of 7 and 9 bars. The fixture remains
+available only for isolated factor research with an explicitly relaxed leg
+span; it cannot emit a production triangle event or trade plan.
 
 NEARUSDT 4h from 2026-07-01 08:00 through 2026-07-17 16:00 UTC+8 is an
 ascending triangle with three lower confirmations at 2026-07-01 08:00,

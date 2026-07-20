@@ -6,6 +6,7 @@ from core.models import Bar
 from features.basic import fit_regression_line
 from indicators.swing import Pivot, PivotDetector, SwingDetector
 from patterns import Triangle
+from patterns.triangle_validation import boundary_body_breach_count
 
 
 HIGH_INDEXES = (2, 10, 18)
@@ -76,7 +77,7 @@ def triangle_bars(
 
 def detector() -> Triangle:
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
-    return Triangle(swing_detector=swing)
+    return Triangle(swing_detector=swing, min_adjacent_anchor_span=1)
 
 
 @pytest.mark.parametrize(
@@ -142,6 +143,66 @@ def static_bars() -> list[Bar]:
     return [Bar(i, 15.0, 15.2, 14.8, 15.0, 1000.0, "4h") for i in range(25)]
 
 
+def alternating_static_points() -> list[Pivot]:
+    return [
+        Pivot(2, 3, 20.0, "high"),
+        Pivot(6, 7, 10.0, "low"),
+        Pivot(10, 11, 19.0, "high"),
+        Pivot(14, 15, 12.0, "low"),
+        Pivot(18, 19, 18.0, "high"),
+        Pivot(22, 23, 14.0, "low"),
+    ]
+
+
+@pytest.mark.parametrize("side", ["upper", "lower"])
+def test_rejects_non_anchor_candle_body_beyond_boundary(side: str) -> None:
+    bars = static_bars()
+    if side == "upper":
+        bars[12] = Bar(12, 18.6, 19.2, 18.4, 19.0, 1000.0, "4h")
+    else:
+        bars[12] = Bar(12, 11.2, 15.2, 11.0, 11.8, 1000.0, "4h")
+
+    result = Triangle(
+        swing_detector=StaticSwingDetector(alternating_static_points()),
+        min_adjacent_anchor_span=1,
+    ).detect(bars)
+
+    assert result.detected is False
+
+
+@pytest.mark.parametrize("side", ["upper", "lower"])
+def test_allows_non_anchor_shadow_beyond_boundary(side: str) -> None:
+    bars = static_bars()
+    if side == "upper":
+        bars[12] = Bar(12, 18.2, 19.2, 18.0, 18.5, 1000.0, "4h")
+    else:
+        bars[12] = Bar(12, 11.8, 15.2, 11.0, 12.1, 1000.0, "4h")
+
+    result = Triangle(
+        swing_detector=StaticSwingDetector(alternating_static_points()),
+        min_adjacent_anchor_span=1,
+    ).detect(bars)
+
+    assert result.detected is True
+    assert result.metadata["body_breach_rule"] == (
+        "bodies_inside_same_and_opposite_boundaries"
+    )
+
+
+def test_body_breach_checks_first_last_anchor_line_not_only_regression() -> None:
+    bars = static_bars()
+    points = (
+        Pivot(2, 3, 20.0, "high"),
+        Pivot(10, 11, 19.4, "high"),
+        Pivot(18, 19, 18.0, "high"),
+    )
+    bars[12] = Bar(12, 18.7, 19.0, 15.0, 18.82, 1000.0, "4h")
+    regression = fit_regression_line(points)
+
+    assert max(bars[12].open, bars[12].close) < regression.value_at(12)
+    assert boundary_body_breach_count(bars, points, regression, upper=True) == 1
+
+
 @pytest.mark.parametrize(
     ("highs", "lows", "detected", "counts"),
     [
@@ -159,7 +220,7 @@ def static_bars() -> list[Bar]:
             [Pivot(6, 7, 20.0, "high"), Pivot(14, 15, 18.0, "high")],
             [
                 Pivot(2, 3, 10.0, "low"),
-                Pivot(10, 11, 11.0, "low"),
+                Pivot(10, 11, 10.8, "low"),
                 Pivot(22, 23, 12.0, "low"),
             ],
             True,
@@ -189,7 +250,10 @@ def test_accepts_three_plus_two_but_rejects_two_plus_two(
     detected: bool,
     counts: tuple[int, int] | None,
 ) -> None:
-    result = Triangle(swing_detector=StaticSwingDetector(highs + lows)).detect(static_bars())
+    result = Triangle(
+        swing_detector=StaticSwingDetector(highs + lows),
+        min_adjacent_anchor_span=1,
+    ).detect(static_bars())
 
     assert result.detected is detected
     if counts is not None:
@@ -197,6 +261,14 @@ def test_accepts_three_plus_two_but_rejects_two_plus_two(
             result.metadata["upper_confirmation_count"],
             result.metadata["lower_confirmation_count"],
         ) == counts
+
+
+def test_default_rejects_cross_boundary_anchors_less_than_ten_bars_apart() -> None:
+    result = Triangle(
+        swing_detector=StaticSwingDetector(alternating_static_points())
+    ).detect(static_bars())
+
+    assert result.detected is False
 
 
 def test_sui_reference_boundaries_are_inward_and_converging() -> None:

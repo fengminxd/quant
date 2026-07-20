@@ -26,9 +26,23 @@ def mu_bars() -> list[Bar]:
     return [Bar(row[0], *row[1:], "4h") for row in rows]
 
 
-def test_mu_triangle_geometry_is_found_by_production_polling() -> None:
+def context_triangle() -> Triangle:
+    """Retain the old MU geometry for factor tests without the new leg gate."""
+
+    return Triangle(min_adjacent_anchor_span=1)
+
+
+def test_mu_triangle_is_rejected_by_production_leg_span() -> None:
     bars = mu_bars()
-    result = PatternDetector([Triangle()]).poll_at(bars, "4h", len(bars) - 1)[0].pattern
+
+    assert PatternDetector([Triangle()]).poll_at(bars, "4h", len(bars) - 1) == []
+
+
+def test_mu_reference_geometry_is_available_with_relaxed_leg_span() -> None:
+    bars = mu_bars()
+    result = PatternDetector([context_triangle()]).poll_at(
+        bars, "4h", len(bars) - 1
+    )[0].pattern
     timestamps = {bar.timestamp: index for index, bar in enumerate(bars)}
 
     assert bars[-1].timestamp == CONFIRMED_AT
@@ -54,7 +68,7 @@ def test_mu_triangle_geometry_is_found_by_production_polling() -> None:
 
 def test_mu_upper_third_wick_rejects_ema99_and_context_is_bearish() -> None:
     bars = mu_bars()
-    result = PatternDetector([Triangle()]).poll(bars_by_timeframe(bars))[0].pattern
+    result = PatternDetector([context_triangle()]).poll(bars_by_timeframe(bars))[0].pattern
     features = bearish_triangle_continuation_features(bars, result)
     factor = TriangleBearishContinuationScore().calculate(features)
     target = next(bar for bar in bars if bar.timestamp == UPPER_THIRD)
@@ -94,7 +108,7 @@ def test_mu_upper_third_wick_rejects_ema99_and_context_is_bearish() -> None:
 def test_mu_third_upper_contact_is_actionable_at_its_close_without_future() -> None:
     bars = mu_bars()
     target = next(index for index, bar in enumerate(bars) if bar.timestamp == UPPER_THIRD)
-    detector = PatternDetector([Triangle()])
+    detector = PatternDetector([context_triangle()])
     before = detector.poll_at(bars, "4h", target - 1)[0].pattern
     at_close = detector.poll_at(bars, "4h", target)[0].pattern
     next_poll = detector.poll_at(bars, "4h", target + 1)[0].pattern

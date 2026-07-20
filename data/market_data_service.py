@@ -48,8 +48,9 @@ class MarketDataService:
             await self._get_active_symbols(),
             self.config.timeframes,
         ):
-            await self.store.upsert_candles([candle])
-            self.cache.update(candle)
+            if candle.is_closed:
+                await self.store.upsert_candles([candle])
+                self.cache.update(candle)
 
     async def _get_active_symbols(self) -> tuple[SymbolConfig, ...]:
         """Return enabled symbols validated against Binance USDT perpetual markets."""
@@ -65,34 +66,54 @@ class MarketDataService:
         symbol: SymbolConfig,
         timeframe: str,
     ) -> list[Candle]:
-        latest_open_time = await self.store.latest_open_time(symbol.name, timeframe)
         interval_ms = timeframe_to_milliseconds(timeframe)
+        now_ms = self.exchange.current_time_ms()
+        latest_completed_open_time = self._latest_completed_open_time(now_ms, interval_ms)
+        latest_open_time = await self.store.latest_closed_open_time(
+            symbol.name,
+            timeframe,
+            latest_completed_open_time,
+        )
         if latest_open_time is None:
             fetched = await self.exchange.fetch_klines(
                 symbol=symbol,
                 timeframe=timeframe,
-                limit=self.config.history_limit,
+                limit=self.config.history_limit + 1,
             )
-            await self.store.upsert_candles(fetched)
-            LOGGER.info("stored %s candles for %s %s", len(fetched), symbol.name, timeframe)
-            return fetched
+            completed = self._completed_candles(fetched, now_ms)[-self.config.history_limit :]
+            await self.store.upsert_candles(completed)
+            LOGGER.info("stored %s candles for %s %s", len(completed), symbol.name, timeframe)
+            return completed
 
-        now_ms = self.exchange.current_time_ms()
         start_time = latest_open_time + interval_ms
-        missing_count = max(0, ((now_ms - start_time) // interval_ms) + 1)
+        missing_count = max(0, ((latest_completed_open_time - start_time) // interval_ms) + 1)
         if missing_count > 0:
             fetched = await self.exchange.fetch_klines(
                 symbol=symbol,
                 timeframe=timeframe,
                 limit=int(missing_count),
                 start_time=start_time,
-                end_time=now_ms,
+                end_time=latest_completed_open_time + interval_ms - 1,
             )
             continuous = self._filter_continuous(fetched, start_time, interval_ms)
-            await self.store.upsert_candles(continuous)
-            LOGGER.info("backfilled %s candles for %s %s", len(continuous), symbol.name, timeframe)
+            completed = self._completed_candles(continuous, now_ms)
+            await self.store.upsert_candles(completed)
+            LOGGER.info("backfilled %s candles for %s %s", len(completed), symbol.name, timeframe)
 
-        return await self.store.recent_candles(symbol.name, timeframe, self.config.history_limit)
+        candles = await self.store.recent_candles(symbol.name, timeframe, self.config.history_limit)
+        return self._completed_candles(candles, now_ms)
+
+    @staticmethod
+    def _latest_completed_open_time(now_ms: int, interval_ms: int) -> int:
+        """Return the open time of the most recently completed interval."""
+
+        return (now_ms // interval_ms - 1) * interval_ms
+
+    @staticmethod
+    def _completed_candles(candles: list[Candle], now_ms: int) -> list[Candle]:
+        """Discard the currently forming candle and any incomplete records."""
+
+        return [candle for candle in candles if candle.is_closed and candle.close_time < now_ms]
 
     @staticmethod
     def _filter_continuous(

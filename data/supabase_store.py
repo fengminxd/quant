@@ -21,14 +21,21 @@ class SupabaseCandleStore:
             "Content-Type": "application/json",
         }
 
-    async def latest_open_time(self, symbol: str, timeframe: str) -> int | None:
-        """Return the latest stored open_time for a symbol/timeframe."""
+    async def latest_closed_open_time(
+        self,
+        symbol: str,
+        timeframe: str,
+        max_open_time: int,
+    ) -> int | None:
+        """Return the latest completed candle that is closed by the given time."""
 
         rows = await self._get(
             {
                 "select": "open_time",
                 "symbol": f"eq.{symbol}",
                 "timeframe": f"eq.{timeframe}",
+                "is_closed": "eq.true",
+                "open_time": f"lte.{max_open_time}",
                 "order": "open_time.desc",
                 "limit": "1",
             }
@@ -48,6 +55,40 @@ class SupabaseCandleStore:
             }
         )
         return [self._record_to_candle(row) for row in reversed(rows)]
+
+    async def closed_candles(
+        self,
+        symbol: str,
+        timeframe: str,
+        page_size: int = 1000,
+    ) -> list[Candle]:
+        """Load every closed candle using an open-time cursor."""
+
+        if page_size <= 0:
+            raise ValueError("page_size must be positive")
+        candles: list[Candle] = []
+        last_open_time: int | None = None
+        while True:
+            params = {
+                "select": "*",
+                "symbol": f"eq.{symbol}",
+                "timeframe": f"eq.{timeframe}",
+                "is_closed": "eq.true",
+                "order": "open_time.asc",
+                "limit": str(page_size),
+            }
+            if last_open_time is not None:
+                params["open_time"] = f"gt.{last_open_time}"
+            rows = await self._get(params)
+            page = [self._record_to_candle(row) for row in rows]
+            candles.extend(page)
+            if len(page) < page_size:
+                break
+            next_open_time = page[-1].open_time
+            if next_open_time == last_open_time:
+                raise RuntimeError("candle pagination cursor did not advance")
+            last_open_time = next_open_time
+        return candles
 
     async def upsert_candles(self, candles: Sequence[Candle]) -> None:
         """Upsert candles by symbol, timeframe, and open_time."""

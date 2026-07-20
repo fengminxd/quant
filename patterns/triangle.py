@@ -16,14 +16,13 @@ from features.basic import (
 )
 from indicators.atr import average_true_range
 from indicators.swing import Pivot, SwingDetector
+from patterns.triangle_contacts import cluster_boundary_pivots, include_closed_shadow_contacts
 from patterns.triangle_geometry import (
     TriangleCandidate,
     apex_index,
     boundary_candidates,
     candidate_rank,
-    cluster_boundary_pivots,
     combine_boundaries,
-    include_closed_shadow_contacts,
     line_geometry,
 )
 
@@ -39,18 +38,20 @@ class Triangle(Pattern):
         swing_detector: SwingDetector | None = None,
         min_boundary_span: int = 5,
         min_overlap_span: int = 5,
+        min_adjacent_anchor_span: int = 10,
         max_fit_error_atr: float = 0.5,
+        max_anchor_deviation_atr: float = 0.5,
         horizontal_slope_atr_per_bar: float = 0.02,
         min_compression_ratio: float = 0.05,
-        max_swings_per_side: int = 12,
+        max_swings_per_side: int = 16,
         confirmation_cluster_bars: int = 5,
         min_cluster_shadow_ratio: float = 0.25,
         cluster_price_tolerance_atr: float = 0.20,
         max_boundary_breach_atr: float = 0.25,
     ) -> None:
-        if min_boundary_span <= 0 or min_overlap_span <= 0:
+        if min(min_boundary_span, min_overlap_span, min_adjacent_anchor_span) <= 0:
             raise ValueError("span constraints must be positive")
-        if max_fit_error_atr < 0.0 or horizontal_slope_atr_per_bar < 0.0:
+        if min(max_fit_error_atr, max_anchor_deviation_atr, horizontal_slope_atr_per_bar) < 0.0:
             raise ValueError("ATR constraints must be non-negative")
         if not 0.0 < min_compression_ratio < 1.0:
             raise ValueError("min_compression_ratio must be between 0 and 1")
@@ -58,17 +59,14 @@ class Triangle(Pattern):
             raise ValueError("max_swings_per_side must be at least 3")
         if confirmation_cluster_bars <= 0:
             raise ValueError("confirmation_cluster_bars must be positive")
-        cluster_limits = (
-            min_cluster_shadow_ratio,
-            cluster_price_tolerance_atr,
-            max_boundary_breach_atr,
-        )
-        if any(value < 0.0 for value in cluster_limits):
+        if min(min_cluster_shadow_ratio, cluster_price_tolerance_atr, max_boundary_breach_atr) < 0:
             raise ValueError("cluster thresholds must be non-negative")
         self.swing_detector = swing_detector or SwingDetector(min_bars=1)
         self.min_boundary_span = min_boundary_span
         self.min_overlap_span = min_overlap_span
+        self.min_adjacent_anchor_span = min_adjacent_anchor_span
         self.max_fit_error_atr = max_fit_error_atr
+        self.max_anchor_deviation_atr = max_anchor_deviation_atr
         self.horizontal_slope_atr_per_bar = horizontal_slope_atr_per_bar
         self.min_compression_ratio = min_compression_ratio
         self.max_swings_per_side = max_swings_per_side
@@ -86,10 +84,7 @@ class Triangle(Pattern):
             return PatternResult(self.pattern_id, self.name, False, 0.0)
         features = self._features(data, candidate)
         score = self.calculate_score(features)
-        detected_at = max(
-            candidate.highs[-1].confirmed_at,
-            candidate.lows[-1].confirmed_at,
-        )
+        detected_at = max(candidate.highs[-1].confirmed_at, candidate.lows[-1].confirmed_at)
         return PatternResult(
             self.pattern_id,
             self.name,
@@ -99,7 +94,7 @@ class Triangle(Pattern):
             geometry={
                 "upper_points": [(point.index, point.price) for point in candidate.highs],
                 "lower_points": [(point.index, point.price) for point in candidate.lows],
-                "upper_timestamps": [data[point.index].timestamp for point in candidate.highs],
+                "upper_timestamps": [data[p.index].timestamp for p in candidate.highs],
                 "lower_timestamps": [data[point.index].timestamp for point in candidate.lows],
                 "upper_line": line_geometry(candidate.upper, candidate.highs),
                 "lower_line": line_geometry(candidate.lower, candidate.lows),
@@ -114,8 +109,12 @@ class Triangle(Pattern):
                 "upper_confirmation_count": len(candidate.highs),
                 "lower_confirmation_count": len(candidate.lows),
                 "confirmation_cluster_bars": self.confirmation_cluster_bars,
+                "confirmation_grouping": "market_leg_with_5_bar_noise_dedup",
                 "alternating_boundary_confirmations": True,
                 "max_boundary_breach_atr": self.max_boundary_breach_atr,
+                "max_anchor_deviation_atr": self.max_anchor_deviation_atr,
+                "anchor_alignment_rule": "each_anchor_near_regression_and_endpoint_line",
+                "body_breach_rule": "bodies_inside_same_and_opposite_boundaries",
                 "confirmation_semantics": "confirmed_swing_or_closed_shadow_contact",
                 "quality_threshold_passed": score >= 50.0,
                 "timestamp_semantics": "bar_open_time",
@@ -161,14 +160,15 @@ class Triangle(Pattern):
                 shadow_ratio=self.min_cluster_shadow_ratio,
             )
         atr = max(average_true_range(data)[-1], 1e-12)
-        highs = self._cluster(data, raw_highs, atr, upper=True)[-self.max_swings_per_side :]
-        lows = self._cluster(data, raw_lows, atr, upper=False)[-self.max_swings_per_side :]
+        highs = self._cluster(data, raw_highs, atr, upper=True, opposite=raw_lows)[-self.max_swings_per_side :]
+        lows = self._cluster(data, raw_lows, atr, upper=False, opposite=raw_highs)[-self.max_swings_per_side :]
         upper_candidates = self._boundary_candidates(highs, atr, upper=True)
         lower_candidates = self._boundary_candidates(lows, atr, upper=False)
         candidates: list[TriangleCandidate] = []
         for high_points, upper in upper_candidates:
             for low_points, lower in lower_candidates:
                 candidate = combine_boundaries(
+                    data,
                     highs,
                     lows,
                     high_points,
@@ -177,6 +177,7 @@ class Triangle(Pattern):
                     lower,
                     atr,
                     min_overlap_span=self.min_overlap_span,
+                    min_adjacent_anchor_span=self.min_adjacent_anchor_span,
                     min_compression_ratio=self.min_compression_ratio,
                     max_boundary_breach_atr=self.max_boundary_breach_atr,
                 )
@@ -185,7 +186,8 @@ class Triangle(Pattern):
         return max(candidates, key=candidate_rank) if candidates else None
 
     def _cluster(
-        self, data: Sequence[Bar], points: Sequence[Pivot], atr: float, *, upper: bool
+        self, data: Sequence[Bar], points: Sequence[Pivot], atr: float, *, upper: bool,
+        opposite: Sequence[Pivot] = (),
     ) -> list[Pivot]:
         return cluster_boundary_pivots(
             data,
@@ -195,6 +197,7 @@ class Triangle(Pattern):
             cluster_bars=self.confirmation_cluster_bars,
             shadow_ratio=self.min_cluster_shadow_ratio,
             price_tolerance_atr=self.cluster_price_tolerance_atr,
+            opposite_points=opposite,
         )
 
     def _boundary_candidates(
@@ -206,6 +209,7 @@ class Triangle(Pattern):
             upper=upper,
             min_span=self.min_boundary_span,
             max_fit_error_atr=self.max_fit_error_atr,
+            max_anchor_deviation_atr=self.max_anchor_deviation_atr,
             horizontal_slope_atr_per_bar=self.horizontal_slope_atr_per_bar,
         )
 

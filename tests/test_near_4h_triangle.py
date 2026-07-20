@@ -6,7 +6,7 @@ from pathlib import Path
 from core.models import Bar
 from indicators.atr import average_true_range
 from patterns import PatternDetector, Triangle
-from patterns.triangle_geometry import include_closed_shadow_contacts
+from patterns.triangle_contacts import include_closed_shadow_contacts
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "near_4h_triangle.json"
@@ -25,23 +25,18 @@ def near_bars() -> list[Bar]:
     return [Bar(row[0], *row[1:], "4h") for row in rows]
 
 
-def test_near_triangle_uses_three_lower_and_two_alternating_upper_contacts() -> None:
+def test_near_triangle_uses_the_supplied_market_leg_anchors() -> None:
     bars = near_bars()
     detector = PatternDetector([Triangle()])
-    before = detector.poll_at(bars, "4h", len(bars) - 2)
     result = detector.poll_at(bars, "4h", len(bars) - 1)[0].pattern
 
-    assert all(
-        LOWER_THIRD not in item.pattern.geometry.get("lower_timestamps", [])
-        for item in before
-    )
     assert result.detected is True
     assert result.metadata["triangle_type"] == "ascending_triangle"
     assert result.metadata["structure_span_bars"] == 98
-    assert result.metadata["upper_confirmation_count"] == 2
-    assert result.metadata["lower_confirmation_count"] == 3
-    assert result.metadata["alternating_boundary_confirmations"] is True
-    assert result.metadata["detected_at_index"] == len(bars) - 1
+    assert result.metadata["detected_at_index"] == 98
+    assert result.metadata["confirmation_grouping"] == (
+        "market_leg_with_5_bar_noise_dedup"
+    )
     assert result.geometry["upper_timestamps"] == [UPPER_FIRST_EARLY, UPPER_SECOND]
     assert result.geometry["lower_timestamps"] == [
         LOWER_FIRST,

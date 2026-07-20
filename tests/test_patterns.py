@@ -202,7 +202,7 @@ def test_trendline_support_detects_three_rising_swing_lows() -> None:
 
 def test_triangle_detects_flat_highs_and_rising_lows() -> None:
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
-    detector = AscendingTriangle(swing)
+    detector = AscendingTriangle(swing, min_adjacent_anchor_span=1)
 
     result = detector.detect(triangle_bars())
 
@@ -309,7 +309,9 @@ def test_double_low_rejects_close_below_common_support_even_within_old_tolerance
 
 def test_pattern_detector_runs_registered_detectors() -> None:
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=2)
-    detector = PatternDetector([TrendlineSupport(swing), AscendingTriangle(swing)])
+    detector = PatternDetector(
+        [TrendlineSupport(swing), AscendingTriangle(swing, min_adjacent_anchor_span=1)]
+    )
 
     results = detector.detect(triangle_bars())
 
