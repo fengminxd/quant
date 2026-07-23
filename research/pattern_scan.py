@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Sequence
 
 from core.models import Bar, PatternResult
-from core.timeframes import MIN_STRUCTURE_SPAN_BARS
+from core.timeframes import MIN_STRUCTURE_SPAN_BARS, TRADING_TIMEFRAMES
 from data.candles import Candle, timeframe_to_milliseconds
-from indicators.swing import PivotDetector
+from factors.priority_combinations import PriorityCombinationScorer
 from patterns import (
     HeadAndShouldersTop,
     HorizontalResistance,
@@ -20,50 +19,20 @@ from patterns import (
     Triangle,
 )
 from patterns.detector import PatternDetector, PatternPollResult
+from research.pattern_events import (
+    PatternAnchor,
+    PatternScanEvent,
+    PriorityLevelRelation,
+)
 from research.pattern_lines import pattern_line_groups
+from research.pattern_schedules import (
+    pivot_confirmation_schedules,
+    validate_scan_bars,
+)
 
 
-SCAN_TIMEFRAMES = ("1h", "4h")
+SCAN_TIMEFRAMES = TRADING_TIMEFRAMES
 UTC_PLUS_8 = timezone(timedelta(hours=8))
-
-
-@dataclass(frozen=True)
-class PatternAnchor:
-    """One absolute candle anchor supporting a detected structure."""
-
-    index: int
-    timestamp: int | str
-    price: float
-
-
-@dataclass(frozen=True)
-class PatternScanEvent:
-    """A de-duplicated historical structure known at one closed candle."""
-
-    symbol: str
-    timeframe: str
-    pattern_id: str
-    pattern_name: str
-    rule: str
-    score: float
-    detected_timestamp: int | str
-    anchors: tuple[PatternAnchor, ...]
-    anchor_groups: tuple[tuple[PatternAnchor, ...], ...] = ()
-    line_groups: tuple[tuple[PatternAnchor, ...], ...] = ()
-
-    @property
-    def first_anchor_index(self) -> int:
-        return min(anchor.index for anchor in self.anchors)
-
-    @property
-    def last_anchor_index(self) -> int:
-        return max(anchor.index for anchor in self.anchors)
-
-    @property
-    def identity(self) -> tuple[str, str, tuple[int | str, ...]]:
-        """Return the stable rule-and-anchor identity used for de-duplication."""
-
-        return self.pattern_id, self.rule, tuple(anchor.timestamp for anchor in self.anchors)
 
 
 def scan_patterns() -> tuple[object, ...]:
@@ -85,10 +54,10 @@ class HistoricalPatternScanner:
 
     def __init__(self, detector: PatternDetector | None = None) -> None:
         self.detector = detector
-        self._continuous_detector = PatternDetector((Triangle(), HorizontalSupport()))
+        self._continuous_detector = PatternDetector((Triangle(),))
         self._scheduled_detectors = {
             "low_2": PatternDetector((ThreePointTrendlineSupport(),)),
-            "low_5": PatternDetector((InverseHeadShoulders(),)),
+            "low_5": PatternDetector((HorizontalSupport(), InverseHeadShoulders())),
             "high_2": PatternDetector(
                 (ThreePointTrendlineResistance(), HorizontalResistance())
             ),
@@ -105,10 +74,12 @@ class HistoricalPatternScanner:
 
         if timeframe not in SCAN_TIMEFRAMES:
             raise ValueError(f"unsupported scan timeframe: {timeframe}")
-        _validate_bars(bars, timeframe)
+        validate_scan_bars(bars, timeframe)
         events: list[PatternScanEvent] = []
         seen: set[tuple[str, str, tuple[int | str, ...]]] = set()
-        schedules = _pivot_confirmation_schedules(bars) if self.detector is None else {}
+        schedules = (
+            pivot_confirmation_schedules(bars) if self.detector is None else {}
+        )
         for as_of_index in range(MIN_STRUCTURE_SPAN_BARS, len(bars)):
             results = self._poll_at(bars, timeframe, as_of_index, schedules)
             for polled in results:
@@ -128,9 +99,8 @@ class HistoricalPatternScanner:
     ) -> list[PatternPollResult]:
         if self.detector is not None:
             return self.detector.poll_at(bars, timeframe, as_of_index)
-        # Triangle accepts a current closed-shadow contact, while horizontal
-        # support accepts a causal left-only boundary swing on the latest bar.
-        # Both therefore remain eligible at every closed candle.
+        # Triangle may accept a current closed-shadow contact without waiting
+        # for a pivot. Horizontal support runs only on confirmed low schedules.
         results = self._continuous_detector.poll_at(bars, timeframe, as_of_index)
         for schedule_name, detector in self._scheduled_detectors.items():
             if as_of_index in schedules[schedule_name]:
@@ -170,10 +140,20 @@ def event_log_line(event: PatternScanEvent) -> str:
     """Serialize the required symbol, timeframe, rule, and anchor timestamps."""
 
     anchors = ", ".join(format_utc_plus_8(anchor.timestamp) for anchor in event.anchors)
+    sources = ", ".join(
+        format_utc_plus_8(anchor.timestamp) for anchor in event.displayed_level_sources
+    )
+    priority = (
+        f" priority_fixed=true combination={event.priority_combination_id} "
+        f"combination_score={event.priority_combination_score:.4f} "
+        f"matched={list(event.priority_matched_conditions)} level_sources=[{sources}]"
+        if event.priority_fixed_combination
+        else " priority_fixed=false"
+    )
     return (
         f"symbol={event.symbol} timeframe={event.timeframe} "
         f"pattern={event.pattern_id} name={event.pattern_name!r} rule={event.rule!r} "
-        f"score={event.score:.4f} anchors=[{anchors}]"
+        f"score={event.score:.4f}{priority} anchors=[{anchors}]"
     )
 
 
@@ -212,6 +192,31 @@ def _to_event(
         for group in pattern_line_groups(polled.pattern, bars, polled.window_start_index)
     )
     result = polled.pattern
+    priority = PriorityCombinationScorer().score(
+        result,
+        bars,
+        as_of_index=polled.as_of_index,
+        window_start_index=polled.window_start_index,
+    )
+    priority_active = bool(priority.metadata.get("priority_fixed_combination", False))
+    level_sources = tuple(
+        PatternAnchor(int(index), bars[int(index)].timestamp, float(level))
+        for index, level in priority.metadata.get("level_sources", ())
+        if 0 <= int(index) < len(bars)
+    )
+    level_relations = tuple(
+        PriorityLevelRelation(
+            str(condition),
+            str(rule_type),
+            PatternAnchor(int(source), bars[int(source)].timestamp, float(level)),
+            PatternAnchor(int(target), bars[int(target)].timestamp, float(level)),
+            float(level),
+        )
+        for condition, rule_type, source, target, level in priority.metadata.get(
+            "level_relations", ()
+        )
+        if 0 <= int(source) < len(bars) and 0 <= int(target) < len(bars)
+    )
     return PatternScanEvent(
         symbol=symbol,
         timeframe=polled.timeframe,
@@ -223,6 +228,17 @@ def _to_event(
         anchors=tuple(anchors),
         anchor_groups=tuple(anchor_groups),
         line_groups=line_groups,
+        priority_fixed_combination=priority_active,
+        priority_combination_id=(
+            str(priority.metadata["combination_id"]) if priority_active else None
+        ),
+        priority_combination_score=priority.score,
+        priority_matched_conditions=tuple(
+            str(value)
+            for value in priority.metadata.get("matched_conditions", ())
+        ),
+        priority_level_sources=level_sources,
+        priority_level_relations=level_relations,
     )
 
 
@@ -251,24 +267,3 @@ def _rule_name(result: PatternResult) -> str:
     if result.pattern_id == "PATTERN_002":
         return str(result.metadata.get("triangle_type", result.metadata.get("rule", result.name)))
     return str(result.metadata.get("rule_type", result.metadata.get("rule", result.name)))
-
-
-def _validate_bars(bars: Sequence[Bar], timeframe: str) -> None:
-    mismatch = next((bar for bar in bars if bar.timeframe != timeframe), None)
-    if mismatch is not None:
-        raise ValueError(
-            f"bar timeframe {mismatch.timeframe!r} does not match {timeframe!r}"
-        )
-
-
-def _pivot_confirmation_schedules(bars: Sequence[Bar]) -> dict[str, set[int]]:
-    """Precompute causal raw-pivot confirmation times for event-driven scans."""
-
-    schedules = {"low_2": set(), "low_5": set(), "high_2": set(), "high_5": set()}
-    if len(bars) >= 5:
-        for pivot in PivotDetector(left=2, right=2).detect(bars):
-            schedules[f"{pivot.kind}_2"].add(pivot.confirmed_at)
-    if len(bars) >= 11:
-        for pivot in PivotDetector(left=5, right=5).detect(bars):
-            schedules[f"{pivot.kind}_5"].add(pivot.confirmed_at)
-    return schedules

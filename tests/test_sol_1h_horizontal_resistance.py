@@ -54,6 +54,10 @@ def test_sol_resistance_has_no_intermediate_price_acceptance_above_level() -> No
         0.2207207207,
         abs=1e-10,
     )
+    assert result.features["contact_overlap_atr"].value == pytest.approx(
+        0.3258258258,
+        abs=1e-10,
+    )
 
 
 def test_sol_second_anchor_requires_two_right_side_confirmation_bars() -> None:

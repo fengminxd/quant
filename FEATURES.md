@@ -44,6 +44,11 @@ Reusable quantitative features shared by all patterns.
   gross_reward_risk    Unadjusted payoff geometry       reward distance/risk distance
   net_reward_risk      Executable payoff geometry       net reward/net risk after costs
   estimated_cost_r     Cost burden in risk units        execution and holding cost/gross risk
+  anchor_ema_acceptance Same-cycle accepted value        anchor close/open versus causal EMA99
+  prior_level_lineage  Earlier price-action ancestry     explicit anchor plus confirmed prior swing
+  support_contact_overlap Horizontal defense integrity    shared close/lower-shadow width / ATR
+  resistance_contact_overlap Supply defense integrity      shared open/upper-shadow width / ATR
+  fixed_combo_coverage Priority cohort evidence          matched configured conditions / condition count
 
 ## Rules
 

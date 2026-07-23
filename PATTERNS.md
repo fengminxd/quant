@@ -311,31 +311,33 @@ retest hypothesis.
 ## Geometry
 
 -   Two confirmed swing anchors separated by at least 40 bars
--   Double-low rule: aligned low/close support contacts
--   Breakout-retest rule: earlier high/open resistance aligned with a later
-    swing-low/close support contact
+-   Double-low rule: both close/lower-shadow traded-price zones intersect
+-   Breakout-retest rule: an earlier open point or upper-shadow price zone
+    intersects a later close point or lower-shadow price zone
 
 For the double-low rule, every non-anchor candle between the two support
-anchors must close strictly above the matched common support level. This rule
-does not use ATR tolerance for an intervening close at or below that level.
-The price-alignment tolerance is frozen at the right Swing Low's own causal ATR
-so later confirmation candles cannot alter already-observed anchor geometry.
+anchors must close strictly above the common support level. ATR cannot bridge
+a price gap between the two anchor zones. Both anchors must be confirmed Swing
+Lows; a latest left-only boundary low is not promoted to a final Pattern.
 
 BTCUSDT 1h provides a reference double-bottom support case from
 2026-06-25 21:00 to 2026-07-01 09:00 UTC+8. The confirmed Swing Lows are
-58,030.0 and 57,758.6, yielding a common support level of 57,894.3 across 132
+58,030.0 and 57,758.6. Their lower-shadow intersection is
+58,030.0–58,248.4, yielding a common support level of 58,139.2 across 132
 complete bars. The lowest intermediate close is 58,356.2, strictly above the
 common support. The second Swing Low is confirmed at 2026-07-01 14:00 after
-five right-side bars; the structural score is 96.7440.
+five right-side bars; the structural score is 100.0.
 
 ## Breakout-Retest Rules
 
--   Find an accepted close above the aligned resistance after the first anchor.
+-   Require a real traded-price intersection between the two anchors; ATR
+    cannot bridge a gap between their price zones.
+-   Use the intersection midpoint as the common support level.
+-   Find an accepted close above that common level after the first anchor.
 -   Ignore below-resistance trading before that accepted breakout.
--   After breakout, closes must hold the level within ATR tolerance.
+-   After breakout, closes must hold the level within an independently
+    configured tolerance (default 0.1 ATR at the retest anchor).
 -   Allow at most one intermediate body interaction with the level.
--   The retest close must hold within the configured ATR tolerance; a marginal
-    close below the exact midpoint remains a valid level-zone retest.
 -   Prefer the most recent eligible broken resistance for a retest event.
 -   `detect_at()` constrains the right anchor to a supplied event index.
 
@@ -344,14 +346,23 @@ five right-side bars; the structural score is 96.7440.
 -   rule_type
 -   span
 -   level
+-   level_error
 -   level_error_atr
+-   contact_overlap_atr
+-   contact_tolerance_atr
+-   hold_tolerance_atr
 -   breakout_index
 -   retest_close_distance_atr
 
+`level_error_atr` is the actual anchor contact gap divided by the retest
+anchor's causal ATR. A valid real intersection normally has zero gap; overlap
+width is reported separately.
+
 ## Invalidation
 
-Post-breakout close acceptance below the reclaimed level or repeated body
-crossings before the retest.
+No real anchor-zone intersection, post-breakout close acceptance below the
+reclaimed level beyond hold tolerance, or repeated body crossings before the
+retest.
 
 ## Python Module
 
@@ -447,6 +458,8 @@ an anchor's opening price is not itself the resistance boundary.
 
 -   Evaluate all confirmed swing-high combinations, not only consecutive highs.
 -   Use the same bar-count rule for 15m, 1h, and 4h input.
+-   Require a real intersection between both open/upper-shadow price zones;
+    ATR and relative-price tolerance cannot bridge a contact gap.
 -   Allow equality as a touch; reject a high strictly above the level.
 -   Rank valid candidates by span, then minimum anchor overshoot.
 -   Emit only after the second swing high's right-side window is confirmed.
@@ -455,6 +468,7 @@ an anchor's opening price is not itself the resistance boundary.
 
 -   span
 -   anchor_overshoot_atr
+-   contact_overlap_atr
 -   penetration_count
 -   open_violation_count
 -   intermediate_touch_count

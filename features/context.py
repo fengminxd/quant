@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from core.models import Bar, FeatureResult
+from features.basic import clamp
 from indicators.atr import average_true_range
 from indicators.ema import exponential_moving_average
 from indicators.swing import Pivot, SwingDetector
@@ -198,3 +199,21 @@ class ContextFeatureExtractor:
 
 def _feature(name: str, value: float, confidence: float) -> FeatureResult:
     return FeatureResult(name, float(value), float(confidence))
+
+
+def directional_structure_score(
+    features: Mapping[str, FeatureResult], *, bullish: bool
+) -> tuple[float, float, bool]:
+    """Return shared directional structure score, confidence, and active gate."""
+
+    high_name = "higher_high_ratio" if bullish else "lower_high_ratio"
+    low_name = "higher_low_ratio" if bullish else "lower_low_ratio"
+    efficiency = features["trend_efficiency_signed"].value
+    efficiency_score = clamp(50.0 + efficiency * (50.0 if bullish else -50.0))
+    score = (
+        0.35 * features[high_name].value * 100.0
+        + 0.35 * features[low_name].value * 100.0
+        + 0.30 * efficiency_score
+    )
+    confidence = features["trend_comparison_count"].confidence
+    return score, confidence, confidence >= 0.5 and score >= 60.0

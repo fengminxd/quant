@@ -32,7 +32,7 @@ def three_point_support_case() -> tuple[list[Bar], PatternResult]:
 def horizontal_support_case() -> tuple[list[Bar], PatternResult]:
     bars = horizontal_double_low_bars()
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
-    result = HorizontalSupport(swing, atr_tolerance_ratio=0.1).detect(bars)
+    result = HorizontalSupport(swing).detect(bars)
     return bars, result
 
 

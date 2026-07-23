@@ -13,11 +13,13 @@ from research.pattern_scan import (
     HistoricalPatternScanner,
     PatternAnchor,
     PatternScanEvent,
+    PriorityLevelRelation,
     candles_to_bars,
     event_log_line,
     scan_patterns,
 )
 from visualization.pattern_pdf import _draw_event, write_symbol_pdf
+from visualization.pattern_text import level_relation_kind
 import matplotlib.pyplot as plt
 
 
@@ -192,6 +194,79 @@ def test_pdf_draws_each_anchor_group_as_a_line() -> None:
 
     _draw_event(axis, bars, event)
 
-    assert len(axis.lines) == 2
+    pattern_lines = [line for line in axis.lines if line.get_label() != "EMA99"]
+    assert len(pattern_lines) == 2
+    assert len([line for line in axis.lines if line.get_label() == "EMA99"]) == 1
+    title = axis.get_title(loc="left")
+    assert "Symbol: BTC | Timeframe: 1h" in title
+    assert "Rule: PATTERN_002 / symmetrical_triangle" in title
     assert all("UTC+8" in label.get_text() for label in axis.texts)
     plt.close(figure)
+
+
+def test_fixed_combo_pdf_explains_conditions_and_draws_level_evidence() -> None:
+    bars = make_bars(130)
+    source = PatternAnchor(40, bars[40].timestamp, 140.0)
+    target = PatternAnchor(100, bars[100].timestamp, 140.0)
+    anchors = (
+        target,
+        PatternAnchor(110, bars[110].timestamp, 150.0),
+        PatternAnchor(120, bars[120].timestamp, 160.0),
+    )
+    relation = PriorityLevelRelation(
+        "first_anchor_double_bottom_support",
+        "double_swing_low",
+        source,
+        target,
+        140.0,
+    )
+    event = PatternScanEvent(
+        "BTC",
+        "1h",
+        "PATTERN_003",
+        "Three Point Trendline Support",
+        "three_point_trendline_support",
+        88.0,
+        bars[122].timestamp,
+        anchors,
+        priority_fixed_combination=True,
+        priority_combination_id="FIXED_COMBO_005",
+        priority_combination_score=66.6667,
+        priority_matched_conditions=(
+            "first_anchor_double_bottom_support",
+            "all_three_anchors_close_above_ema99",
+        ),
+        priority_level_relations=(relation,),
+    )
+    figure, axis = plt.subplots()
+
+    _draw_event(axis, bars, event)
+
+    title = axis.get_title(loc="left")
+    assert "Fixed combination: FIXED_COMBO_005" in title
+    assert "Combined conditions (2):" in title
+    assert "P1 + prior anchor = double-bottom support" in title
+    assert "P1/P2/P3 closes > EMA99" in title
+    assert any(
+        text.get_text().startswith("S1: double-bottom support")
+        for text in axis.texts
+    )
+    assert any(
+        line.get_label() == "Combo double-bottom support"
+        for line in axis.lines
+    )
+    ema_line = next(line for line in axis.lines if line.get_label() == "EMA99")
+    assert len(ema_line.get_ydata()) == 81
+    plt.close(figure)
+
+
+def test_pdf_classifies_strict_horizontal_resistance_as_pressure() -> None:
+    prefix, label, color = level_relation_kind(
+        "strict_two_swing_horizontal_resistance"
+    )
+
+    assert (prefix, label, color) == (
+        "R",
+        "horizontal resistance",
+        "#c62828",
+    )

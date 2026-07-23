@@ -100,6 +100,16 @@ ThreePointTrendlineSupport.detect_anchors(data, anchor_indexes)-\>PatternResult
 
 HorizontalSupport.detect_at(data, anchor_index)-\>PatternResult
 
+Horizontal support requires confirmed Swing anchors. Double-bottom anchors
+must share a real close/lower-shadow traded-price intersection; ATR is not a
+contact-gap tolerance.
+
+HorizontalResistance.detect(data)-\>PatternResult
+
+Horizontal resistance and its fixed-combination lineage share the same exact
+open/upper-shadow contact contract. `price_epsilon` is an absolute numerical
+tolerance and does not scale with price or ATR.
+
 SupportConfluenceScorer.evaluate(data, event_index, as_of_index)-\>SupportConfluenceEvaluation
 
 support_lineage_features(inverse, horizontal, trendline)-\>dict
@@ -109,6 +119,44 @@ SupportLineageScore.calculate(features)-\>FactorResult
 The evaluation contains the gated PatternResult, selected FactorResults, and a
 0-100 composite FactorResult. See `CONTEXT_FACTORS.md`.
 
+## Fixed Priority Combinations
+
+PriorityCombinationScorer.score(
+pattern_result, data, as_of_index, window_start_index)-\>FactorResult
+
+The scorer labels the eight fixed Pattern/EMA99/level-lineage combinations on
+`15m`, `1h`, and `4h`. Its EMA99 always belongs to the supplied Pattern
+timeframe. Historical scan events expose `priority_fixed_combination`,
+`priority_combination_id`, `priority_combination_score`, and
+`priority_matched_conditions`. `priority_level_sources` preserves the actual
+historical level anchors used by matched conditions for backward-compatible
+log/PDF provenance. `priority_level_relations` additionally preserves each
+matched condition, relation type, source anchor, target anchor, and shared
+level. PDF event charts state symbol, timeframe, Pattern rule, and every
+matched fixed-combination condition; they mark relation sources, connect them
+to their parent anchors, and draw the causal EMA99 from the same timeframe.
+See `PRIORITY_COMBINATIONS.md`.
+
 Support confluence is event anchored: pattern detection may use bars through
 the swing-confirmation index, while EMA99 and reclaim features are frozen at
 the third-point candle close.
+
+## Retrospective Anchor Outcome Audit
+
+AnchorTradeOutcomeEvaluator.plan(event, bars)-\>AnchorTradePlan | None
+
+AnchorTradeOutcomeEvaluator.evaluate(event, bars)-\>AnchorTradeOutcome | None
+
+write_anchor_trade_report(events, bars_by_timeframe, output_path, source_pdf)
+    -\>Path
+
+The audit maps PATTERN_002-008 to their requested second, right-shoulder, or
+third anchor and labels the first gross ±1.5% barrier touch. Triangle direction
+is frozen at the earliest boundary anchor. Same-candle dual touches resolve
+stop-first, unresolved cases remain in the denominator, and FIXED_COMBO
+outcomes are summarized separately. Default net-return estimates include
+fees and slippage.
+
+This API is deliberately retrospective: it records Pattern confirmation delay
+and `causal_at_anchor` rather than emitting a live signal from an anchor that
+was not yet confirmed. See `BACKTEST.md`.

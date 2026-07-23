@@ -148,7 +148,10 @@ def horizontal_double_low_bars(short_span: bool = False, pierced: bool = False) 
     return bars
 
 
-def horizontal_breakout_retest_bars(extra_pierce: bool = False, weak_above_close: bool = False) -> list[Bar]:
+def horizontal_breakout_retest_bars(
+    extra_pierce: bool = False,
+    failed_hold_close: bool = False,
+) -> list[Bar]:
     bars: list[Bar] = []
     for index in range(70):
         low = 20.8
@@ -175,10 +178,10 @@ def horizontal_breakout_retest_bars(extra_pierce: bool = False, weak_above_close
             open_price = 21.2
             close = 20.0
             high = 21.4
-        elif weak_above_close and index == 45:
-            low = 20.2
+        elif failed_hold_close and index == 45:
+            low = 19.2
             open_price = 21.4
-            close = 20.5
+            close = 19.5
             high = 21.8
         if extra_pierce and index == 40:
             low = 19.9
@@ -245,7 +248,7 @@ def test_three_point_trendline_support_rejects_short_total_span() -> None:
 
 def test_horizontal_support_detects_double_swing_low_rule() -> None:
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
-    detector = HorizontalSupport(swing, atr_tolerance_ratio=0.1)
+    detector = HorizontalSupport(swing)
 
     result = detector.detect(horizontal_double_low_bars())
 
@@ -258,7 +261,7 @@ def test_horizontal_support_detects_double_swing_low_rule() -> None:
 
 def test_horizontal_support_detects_breakout_retest_rule() -> None:
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
-    detector = HorizontalSupport(swing, atr_tolerance_ratio=0.1)
+    detector = HorizontalSupport(swing)
 
     result = detector.detect(horizontal_breakout_retest_bars())
 
@@ -268,25 +271,35 @@ def test_horizontal_support_detects_breakout_retest_rule() -> None:
     assert result.features["pierce_count"].value == 1.0
 
 
-def test_horizontal_support_detects_breakout_retest_at_window_boundaries() -> None:
+def test_horizontal_support_rejects_unconfirmed_window_boundary_anchors() -> None:
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
-    detector = HorizontalSupport(swing, atr_tolerance_ratio=0.1)
+    detector = HorizontalSupport(swing)
 
     result = detector.detect(horizontal_breakout_retest_bars()[5:56])
 
-    assert result.detected is True
-    assert result.metadata["rule_type"] == "breakout_retest"
-    assert result.geometry["points"] == [(0, 23.0), (50, 19.7)]
+    assert result.detected is False
+
+
+def test_horizontal_support_waits_for_right_side_low_confirmation() -> None:
+    swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
+    detector = HorizontalSupport(swing)
+    bars = horizontal_double_low_bars()
+
+    assert detector.detect(bars[:56]).detected is False
+    assert detector.detect(bars[:57]).detected is True
 
 
 def test_horizontal_support_rejects_short_span_and_extra_pierces() -> None:
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
-    detector = HorizontalSupport(swing, atr_tolerance_ratio=0.1)
+    detector = HorizontalSupport(swing)
 
     assert detector.detect(horizontal_double_low_bars(short_span=True)).detected is False
     assert detector.detect(horizontal_double_low_bars(pierced=True)).detected is False
     assert detector.detect(horizontal_breakout_retest_bars(extra_pierce=True)).detected is False
-    assert detector.detect(horizontal_breakout_retest_bars(weak_above_close=True)).detected is False
+    assert detector.detect_at(
+        horizontal_breakout_retest_bars(failed_hold_close=True),
+        55,
+    ).detected is False
 
 
 def test_double_low_rejects_close_below_common_support_even_within_old_tolerance() -> None:
@@ -302,7 +315,7 @@ def test_double_low_rejects_close_below_common_support_even_within_old_tolerance
         bar.timeframe,
     )
     swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
-    detector = HorizontalSupport(swing, atr_tolerance_ratio=0.1)
+    detector = HorizontalSupport(swing)
 
     assert detector.detect(bars).detected is False
 

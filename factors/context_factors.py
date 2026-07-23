@@ -7,21 +7,19 @@ from collections.abc import Mapping, Sequence
 from core.base import Factor
 from core.models import FactorResult, FeatureResult
 from features.basic import clamp
+from features.context import directional_structure_score
 
 
 class UptrendStructureScore(Factor):
     """Score confirmed higher-high and higher-low market structure."""
 
     def calculate(self, features: Mapping[str, FeatureResult]) -> FactorResult:
-        sequence_confidence = _confidence(features, "trend_comparison_count")
-        score = (
-            0.35 * _value(features, "higher_high_ratio") * 100.0
-            + 0.35 * _value(features, "higher_low_ratio") * 100.0
-            + 0.30 * clamp(50.0 + _value(features, "trend_efficiency_signed") * 50.0)
+        score, sequence_confidence, active = directional_structure_score(
+            features, bullish=True
         )
         return _result(
             "UptrendStructureScore", score, features, sequence_confidence,
-            active=sequence_confidence >= 0.5 and score >= 60.0,
+            active=active,
             state="uptrend" if score >= 60.0 else "not_uptrend",
         )
 
@@ -30,15 +28,12 @@ class DowntrendStructureScore(Factor):
     """Score confirmed lower-high and lower-low market structure."""
 
     def calculate(self, features: Mapping[str, FeatureResult]) -> FactorResult:
-        sequence_confidence = _confidence(features, "trend_comparison_count")
-        score = (
-            0.35 * _value(features, "lower_high_ratio") * 100.0
-            + 0.35 * _value(features, "lower_low_ratio") * 100.0
-            + 0.30 * clamp(50.0 - _value(features, "trend_efficiency_signed") * 50.0)
+        score, sequence_confidence, active = directional_structure_score(
+            features, bullish=False
         )
         return _result(
             "DowntrendStructureScore", score, features, sequence_confidence,
-            active=sequence_confidence >= 0.5 and score >= 60.0,
+            active=active,
             state="downtrend" if score >= 60.0 else "not_downtrend",
         )
 

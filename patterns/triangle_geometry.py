@@ -86,6 +86,8 @@ def combine_boundaries(
 
     if len(highs) == len(lows) == 2:
         return None
+    if boundary_slopes_have_same_direction(upper, lower):
+        return None
     if not market_legs_are_complete(highs, lows, min_adjacent_anchor_span):
         return None
     overlap_start = max(highs[0].index, lows[0].index)
@@ -135,6 +137,14 @@ def combine_boundaries(
     return TriangleCandidate(
         highs, lows, upper, lower, overlap_start, overlap_end, compression, atr
     )
+
+
+def boundary_slopes_have_same_direction(
+    upper: RegressionLine, lower: RegressionLine
+) -> bool:
+    """Return whether both triangle boundaries rise or both fall."""
+
+    return upper.slope * lower.slope > 0.0
 
 
 def market_legs_are_complete(

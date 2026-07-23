@@ -107,6 +107,22 @@ def test_rejects_parallel_box_and_diverging_boundaries() -> None:
     assert detector().detect(triangle_bars(0.20, -0.20)).detected is False
 
 
+@pytest.mark.parametrize(
+    ("upper_slope", "lower_slope"),
+    [
+        (0.01, 0.12),
+        (-0.12, -0.01),
+    ],
+)
+def test_rejects_boundaries_with_same_slope_sign(
+    upper_slope: float,
+    lower_slope: float,
+) -> None:
+    result = detector().detect(triangle_bars(upper_slope, lower_slope))
+
+    assert result.detected is False
+
+
 @pytest.mark.parametrize("direction", ["upside", "downside"])
 def test_scores_breakout_in_either_direction(direction: str) -> None:
     result = detector().detect(triangle_bars(-0.08, 0.08, breakout=direction))

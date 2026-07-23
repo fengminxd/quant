@@ -20,3 +20,18 @@
 2026-07-07 12:22:42,851 INFO data.market_data_service: backfilled 1 candles for AAVE 15m
 2026-07-07 12:22:44,937 INFO data.market_data_service: backfilled 1 candles for XRP 15m
 2026-07-07 12:22:47,733 INFO data.market_data_service: backfilled 1 candles for TAO 15m
+2026-07-21 08:31:35,811 ERROR data.binance_futures: Binance websocket disconnected; reconnecting
+TimeoutError: timed out while closing connection
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/root/dp-k/data/binance_futures.py", line 169, in stream_klines
+    async with websockets.connect(url, ping_interval=20, ping_timeout=20) as websocket:
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/dp-k/.venv/lib/python3.12/site-packages/websockets/asyncio/connection.py", line 244, in __aiter__
+    yield await self.recv()
+          ^^^^^^^^^^^^^^^^^
+  File "/root/dp-k/.venv/lib/python3.12/site-packages/websockets/asyncio/connection.py", line 324, in recv
+    raise self.protocol.close_exc from self.recv_exc
+websockets.exceptions.ConnectionClosedError: sent 1011 (internal error) keepalive ping timeout; no close frame received

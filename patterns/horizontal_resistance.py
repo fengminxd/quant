@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
@@ -12,6 +11,7 @@ from core.models import Bar, FeatureResult, PatternResult
 from factors.pattern_factors import HorizontalResistanceScore
 from indicators.atr import average_true_range
 from indicators.swing import Pivot, SwingDetector
+from patterns.support_levels import horizontal_resistance_contacts
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class HorizontalResistanceCandidate:
     points: tuple[Pivot, Pivot]
     level: float
     contact_types: tuple[str, str]
+    contact_overlap: float
 
 
 class HorizontalResistance(Pattern):
@@ -107,46 +108,37 @@ class HorizontalResistance(Pattern):
         for left, right in combinations(highs, 2):
             if right.index - left.index < self.min_span:
                 continue
-            for level in self._shared_contact_levels(data[left.index], data[right.index]):
-                if self._penetration_count(data, left.index, right.index, level) > 0:
+            contacts = horizontal_resistance_contacts(
+                data[left.index],
+                data[right.index],
+                price_epsilon=self.price_epsilon,
+            )
+            for contact in contacts:
+                if self._penetration_count(
+                    data, left.index, right.index, contact.level
+                ) > 0:
                     continue
                 if self._open_violation_count(
-                    data, left.index, right.index, level
+                    data, left.index, right.index, contact.level
                 ) > 0:
                     continue
                 candidates.append(
                     HorizontalResistanceCandidate(
                         (left, right),
-                        level,
+                        contact.level,
                         (
-                            self._contact_type(data[left.index], level),
-                            self._contact_type(data[right.index], level),
+                            self._contact_type(data[left.index], contact.level),
+                            self._contact_type(data[right.index], contact.level),
                         ),
+                        contact.overlap_width,
                     )
                 )
         if not candidates:
             return None
         return max(candidates, key=self._rank)
 
-    def _shared_contact_levels(self, left: Bar, right: Bar) -> tuple[float, ...]:
-        candidates: list[float] = []
-        for level in (left.open, right.open):
-            if self._anchor_contact(left, level) and self._anchor_contact(right, level):
-                candidates.append(level)
-        shadow_floor = max(max(left.open, left.close), max(right.open, right.close))
-        shadow_ceiling = min(left.high, right.high)
-        if shadow_floor <= shadow_ceiling + self.price_epsilon:
-            candidates.append(shadow_ceiling)
-        return tuple(sorted(set(candidates), reverse=True))
-
-    def _anchor_contact(self, bar: Bar, level: float) -> bool:
-        at_open = math.isclose(level, bar.open, abs_tol=self.price_epsilon, rel_tol=1e-9)
-        body_high = max(bar.open, bar.close)
-        in_upper_shadow = body_high - self.price_epsilon <= level <= bar.high + self.price_epsilon
-        return at_open or in_upper_shadow
-
     def _contact_type(self, bar: Bar, level: float) -> str:
-        if math.isclose(level, bar.open, abs_tol=self.price_epsilon, rel_tol=1e-9):
+        if abs(level - bar.open) <= self.price_epsilon:
             return "open"
         return "upper_shadow"
 
@@ -192,6 +184,11 @@ class HorizontalResistance(Pattern):
             "anchor_overshoot_atr": FeatureResult(
                 "anchor_overshoot_atr", overshoot / atr, 1.0
             ),
+            "contact_overlap_atr": FeatureResult(
+                "contact_overlap_atr",
+                candidate.contact_overlap / atr,
+                1.0,
+            ),
             "penetration_count": FeatureResult(
                 "penetration_count",
                 float(
@@ -217,12 +214,7 @@ class HorizontalResistance(Pattern):
                 "intermediate_touch_count",
                 float(
                     sum(
-                        math.isclose(
-                            bar.high,
-                            candidate.level,
-                            abs_tol=self.price_epsilon,
-                            rel_tol=1e-9,
-                        )
+                        abs(bar.high - candidate.level) <= self.price_epsilon
                         for bar in middle
                     )
                 ),
@@ -258,7 +250,12 @@ class HorizontalResistance(Pattern):
     @staticmethod
     def _rank(
         candidate: HorizontalResistanceCandidate,
-    ) -> tuple[float, float, float]:
+    ) -> tuple[float, float, float, float]:
         left, right = candidate.points
         overshoot = sum(point.price - candidate.level for point in candidate.points)
-        return (float(right.index - left.index), -overshoot, float(right.index))
+        return (
+            float(right.index - left.index),
+            -overshoot,
+            candidate.contact_overlap,
+            float(right.index),
+        )

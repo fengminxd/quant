@@ -5,8 +5,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from core.models import Bar
+from features.priority_level_context import PriorityLevelContextMatcher
 from indicators.swing import PivotDetector, SwingDetector
 from patterns.horizontal_resistance import HorizontalResistance
+from patterns.support_levels import horizontal_resistance_contacts
 
 
 def resistance_bars(
@@ -87,6 +89,86 @@ def test_accepts_open_or_upper_shadow_anchor_contacts() -> None:
 
     assert wick_result.metadata["contact_types"] == ("upper_shadow", "upper_shadow")
     assert open_result.metadata["contact_types"] == ("open", "open")
+
+
+def test_open_point_can_contact_the_other_anchor_upper_shadow() -> None:
+    bars = resistance_bars()
+    target = bars[45]
+    bars[45] = Bar(
+        target.timestamp,
+        19.8,
+        19.8,
+        18.0,
+        19.0,
+        target.volume,
+        target.timeframe,
+    )
+
+    result = detector().detect(bars)
+
+    assert result.detected is True
+    assert result.geometry["level"] == pytest.approx(19.8)
+    assert result.metadata["contact_types"] == ("upper_shadow", "open")
+
+
+def test_rejects_non_overlapping_zones_in_pattern_and_priority_context() -> None:
+    bars = resistance_bars()
+    target = bars[45]
+    bars[45] = Bar(
+        target.timestamp,
+        19.0,
+        19.4,
+        18.0,
+        18.5,
+        target.volume,
+        target.timeframe,
+    )
+    swing = SwingDetector(PivotDetector(left=1, right=1), min_bars=1)
+
+    pattern = HorizontalResistance(swing_detector=swing).detect(bars)
+    priority = PriorityLevelContextMatcher(
+        swing,
+        min_span=40,
+    ).horizontal_resistance(bars, target_index=45, as_of_index=46)
+
+    assert pattern.detected is False
+    assert priority.matched is False
+
+
+def test_high_price_gap_is_not_expanded_by_relative_tolerance() -> None:
+    left = Bar(0, 100_000.0, 100_010.0, 99_980.0, 99_990.0, 1.0)
+    right = Bar(1, 99_990.0, 99_999.99995, 99_970.0, 99_980.0, 1.0)
+
+    contacts = horizontal_resistance_contacts(left, right)
+
+    assert contacts == ()
+
+
+def test_atr_regime_does_not_change_resistance_detection() -> None:
+    regular = resistance_bars()
+    volatile = [
+        Bar(
+            bar.timestamp,
+            bar.open,
+            bar.high,
+            bar.low - 100.0,
+            bar.close,
+            bar.volume,
+            bar.timeframe,
+        )
+        for bar in regular
+    ]
+
+    regular_result = detector().detect(regular)
+    volatile_result = detector().detect(volatile)
+
+    assert regular_result.detected is True
+    assert volatile_result.detected is True
+    assert volatile_result.geometry["level"] == regular_result.geometry["level"]
+    assert (
+        volatile_result.features["intermediate_clearance_atr"].value
+        != regular_result.features["intermediate_clearance_atr"].value
+    )
 
 
 def test_rejects_intermediate_penetration() -> None:

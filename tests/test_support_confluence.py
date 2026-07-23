@@ -108,8 +108,8 @@ def test_confluence_gate_rejects_close_below_reclaimed_resistance() -> None:
         event.timestamp,
         47.10,
         47.20,
-        event.low,
-        47.12,
+        46.80,
+        46.90,
         event.volume,
         event.timeframe,
     )

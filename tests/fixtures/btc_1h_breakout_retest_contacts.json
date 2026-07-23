@@ -1,0 +1,23 @@
+[
+  {
+    "source_timestamp": "2026-04-21 16:00 UTC+8",
+    "source": [76050.0, 76999.0, 76025.0, 76462.4, 1.0],
+    "retest_timestamp": "2026-04-24 01:00 UTC+8",
+    "retest": [78049.1, 78137.8, 76900.1, 77715.2, 1.0],
+    "expected_contact": true
+  },
+  {
+    "source_timestamp": "2026-04-21 16:00 UTC+8",
+    "source": [76050.0, 76999.0, 76025.0, 76462.4, 1.0],
+    "retest_timestamp": "2026-04-25 06:00 UTC+8",
+    "retest": [77490.0, 77579.9, 77206.8, 77294.5, 1.0],
+    "expected_contact": false
+  },
+  {
+    "source_timestamp": "2026-04-21 16:00 UTC+8",
+    "source": [76050.0, 76999.0, 76025.0, 76462.4, 1.0],
+    "retest_timestamp": "2026-04-26 00:00 UTC+8",
+    "retest": [77289.3, 77411.8, 77100.0, 77364.0, 1.0],
+    "expected_contact": false
+  }
+]

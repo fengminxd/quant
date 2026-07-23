@@ -102,6 +102,7 @@ class Triangle(Pattern):
             },
             metadata={
                 "rule": "converging_swing_triangle",
+                "boundary_slope_rule": "opposite_or_horizontal_only",
                 "triangle_type": self._triangle_type(candidate),
                 "state": self._state(features),
                 "breakout_direction": self._breakout_direction(features),

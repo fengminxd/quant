@@ -213,6 +213,11 @@ evidence of persistent seller defense.
 +0.15*intermediate_open_margin
 ```
 
+ATR normalizes factor magnitudes only. Pattern activation is determined by a
+shared exact open/upper-shadow intersection and is invariant to ATR regime.
+`contact_overlap_atr` is reported as diagnostic evidence but is not weighted
+until out-of-sample tests establish monotonic value.
+
 ## Output
 
 0\~100 structural score; never Buy/Sell.
@@ -522,3 +527,37 @@ head-and-shoulders rules. The factor never emits Buy/Sell.
 -   Replay ambiguous stop/target bars on a lower timeframe
 -   Fee, slippage, funding, and stop-gap sensitivity
 -   MFE, MAE, time-to-target, Sharpe, Sortino, and maximum drawdown
+
+------------------------------------------------------------------------
+
+# FACTOR_009 PriorityFixedCombinationScore
+
+## Market Logic
+
+A Pattern has stronger contextual coherence when its designated anchor bodies
+are accepted on the correct side of same-timeframe EMA99 and when those
+anchors inherit an independently valid historical support or resistance
+structure. Directional triangle profiles additionally require the prior trend
+to be confirmed before the triangle begins.
+
+## Score
+
+After Pattern, timeframe, variant, and trend gates pass:
+
+``` text
+score = matched configured conditions / configured conditions * 100
+```
+
+At least one matched condition sets `priority_fixed_combination=True`.
+Multiple simultaneously matched conditions form separate coverage tiers. The
+factor is score-and-label only and never emits Buy/Sell. The eight profiles and
+causal anchor semantics are specified in `PRIORITY_COMBINATIONS.md`.
+Any double-bottom lineage condition uses the same strict traded-zone
+intersection as PATTERN_004 and cannot be activated by ATR-aligned endpoints.
+
+## Validation
+
+-   Condition and coverage-tier ablation by fixed-combination ID
+-   Forward-return IC and RankIC by `15m`, `1h`, and `4h`
+-   Walk-forward, rolling OOS, costs, funding, and Monte Carlo resampling
+-   Explicit overlap analysis against Pattern quality and existing context factors

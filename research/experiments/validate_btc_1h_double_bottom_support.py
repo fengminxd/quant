@@ -39,12 +39,12 @@ async def validate() -> None:
         _timestamp("2026-06-25 21:00"),
         _timestamp("2026-07-01 09:00"),
     ]
-    assert isclose(result.geometry["level"], 57_894.3, abs_tol=1e-10)
+    assert isclose(result.geometry["level"], 58_139.2, abs_tol=1e-10)
     assert result.features["span"].value == 132.0
     assert min(bar.close for bar in bars[6:137]) > result.geometry["level"]
     assert result.metadata["detected_at_index"] == 142
     assert bars[142].timestamp == _timestamp("2026-07-01 14:00")
-    assert isclose(result.score, 96.744, abs_tol=1e-4)
+    assert isclose(result.score, 100.0, abs_tol=1e-4)
     LOGGER.info(
         "BTCUSDT double bottom validated: level=%.1f span=%.0f score=%.4f",
         result.geometry["level"],

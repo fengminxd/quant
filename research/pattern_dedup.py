@@ -47,9 +47,16 @@ def select_temporally_distinct_events(
     )
 
 
-def _quality_rank(event: PatternScanEvent) -> tuple[float, int, int, int]:
+def _quality_rank(event: PatternScanEvent) -> tuple[float, float, float, int, int, int]:
     span = event.last_anchor_index - event.first_anchor_index
-    return event.score, span, event.last_anchor_index, _timestamp_ms(event.detected_timestamp)
+    return (
+        float(event.priority_fixed_combination),
+        event.priority_combination_score,
+        event.score,
+        span,
+        event.last_anchor_index,
+        _timestamp_ms(event.detected_timestamp),
+    )
 
 
 def _timestamp_ms(timestamp: int | str) -> int:

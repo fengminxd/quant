@@ -35,8 +35,8 @@ def test_btc_two_swing_lows_form_confirmed_double_bottom_support() -> None:
         (5, pytest.approx(58_030.0)),
         (137, pytest.approx(57_758.6)),
     ]
-    assert result.geometry["level"] == pytest.approx(57_894.3)
-    assert result.score == pytest.approx(96.744, abs=1e-4)
+    assert result.geometry["level"] == pytest.approx(58_139.2)
+    assert result.score == 100.0
 
 
 def test_btc_intermediate_closes_stay_strictly_above_common_support() -> None:
@@ -47,9 +47,10 @@ def test_btc_intermediate_closes_stay_strictly_above_common_support() -> None:
     assert result.features["span"].value == 132.0
     assert min(bar.close for bar in intermediate) == pytest.approx(58_356.2)
     assert all(bar.close > result.geometry["level"] for bar in intermediate)
-    assert result.features["level_error"].value == pytest.approx(271.4)
-    assert result.features["level_error_atr"].value == pytest.approx(
-        0.0930289497,
+    assert result.features["level_error"].value == 0.0
+    assert result.features["level_error_atr"].value == 0.0
+    assert result.features["contact_overlap_atr"].value == pytest.approx(
+        0.4491714655,
         abs=1e-10,
     )
     assert result.features["breakout_index"].value == -1.0

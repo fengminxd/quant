@@ -50,6 +50,8 @@ __all__ = [
     "ContextFeatureExtractor",
     "PatternTradePlan",
     "PatternTradePlanExtractor",
+    "PriorityCombinationFeatureExtractor",
+    "PriorityLevelContextMatcher",
     "TransactionCostModel",
     "support_lineage_features",
     "bearish_triangle_continuation_features",
@@ -57,3 +59,17 @@ __all__ = [
     "upper_ema_wick_rejection_at_close",
     "upper_ema_wick_rejection_indexes",
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Load priority features lazily to avoid a patterns/factors import cycle."""
+
+    if name == "PriorityCombinationFeatureExtractor":
+        from features.priority_combinations import PriorityCombinationFeatureExtractor
+
+        return PriorityCombinationFeatureExtractor
+    if name == "PriorityLevelContextMatcher":
+        from features.priority_level_context import PriorityLevelContextMatcher
+
+        return PriorityLevelContextMatcher
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

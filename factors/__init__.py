@@ -59,6 +59,8 @@ __all__ = [
     "PatternFactorProfile",
     "PatternTradeFeasibilityEvaluation",
     "PatternTradeFeasibilityScorer",
+    "PriorityCombinationScorer",
+    "PriorityFixedCombinationScore",
     "PriorHighBreakoutScore",
     "PriorLowBreakdownScore",
     "SupportConfluenceEvaluation",
@@ -71,3 +73,19 @@ __all__ = [
     "TrendlineSupportScore",
     "UptrendStructureScore",
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Load priority factors lazily to avoid a features/patterns import cycle."""
+
+    if name in {"PriorityCombinationScorer", "PriorityFixedCombinationScore"}:
+        from factors.priority_combinations import (
+            PriorityCombinationScorer,
+            PriorityFixedCombinationScore,
+        )
+
+        return {
+            "PriorityCombinationScorer": PriorityCombinationScorer,
+            "PriorityFixedCombinationScore": PriorityFixedCombinationScore,
+        }[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

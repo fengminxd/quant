@@ -3,36 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from itertools import combinations
 
 from core.base import Pattern
 from core.models import Bar, FeatureResult, PatternResult
 from features.basic import clamp
 from indicators.atr import average_true_range
-from indicators.swing import Pivot, PivotDetector, SwingDetector
-from patterns.support_levels import (
-    all_closes_above_level,
-    body_pierce_count,
-    first_accepted_breakout,
-    lower_support_levels,
-    matching_level,
-    post_breakout_closes_hold,
-    upper_resistance_levels,
+from indicators.swing import PivotDetector, SwingDetector
+from patterns.horizontal_support_candidates import (
+    HorizontalSupportCandidate,
+    HorizontalSupportCandidateFinder,
 )
-
-
-@dataclass(frozen=True)
-class HorizontalSupportCandidate:
-    """Horizontal support candidate from two swing anchors."""
-
-    rule_type: str
-    points: tuple[Pivot, Pivot]
-    level: float
-    tolerance: float
-    pierce_count: int
-    level_error: float
-    breakout_index: int | None = None
 
 
 class HorizontalSupport(Pattern):
@@ -45,17 +25,30 @@ class HorizontalSupport(Pattern):
         self,
         swing_detector: SwingDetector | None = None,
         min_span: int = 40,
-        atr_tolerance_ratio: float = 0.6,
+        breakout_hold_atr_tolerance_ratio: float = 0.1,
+        price_epsilon: float = 1e-9,
     ) -> None:
         if min_span <= 0:
             raise ValueError("min_span must be positive")
-        if atr_tolerance_ratio < 0:
-            raise ValueError("atr_tolerance_ratio must be non-negative")
+        if min(
+            breakout_hold_atr_tolerance_ratio,
+            price_epsilon,
+        ) < 0:
+            raise ValueError("price tolerances must be non-negative")
         self.swing_detector = swing_detector or SwingDetector(
             PivotDetector(left=5, right=5), min_bars=3
         )
         self.min_span = min_span
-        self.atr_tolerance_ratio = atr_tolerance_ratio
+        self.breakout_hold_atr_tolerance_ratio = (
+            breakout_hold_atr_tolerance_ratio
+        )
+        self.price_epsilon = price_epsilon
+        self.candidate_finder = HorizontalSupportCandidateFinder(
+            self.swing_detector,
+            min_span,
+            breakout_hold_atr_tolerance_ratio,
+            price_epsilon,
+        )
 
     def detect(self, data: Sequence[Bar]) -> PatternResult:
         """Detect the highest-quality horizontal support candidate."""
@@ -91,6 +84,9 @@ class HorizontalSupport(Pattern):
             geometry={
                 "level": candidate.level,
                 "points": [(point.index, point.price) for point in candidate.points],
+                "contact_points": [
+                    (point.index, candidate.level) for point in candidate.points
+                ],
                 "point_timestamps": [data[point.index].timestamp for point in candidate.points],
                 "breakout_index": candidate.breakout_index,
                 "breakout_timestamp": (
@@ -100,6 +96,7 @@ class HorizontalSupport(Pattern):
             },
             metadata={
                 "rule_type": candidate.rule_type,
+                "contact_rule": "traded_zone_overlap",
                 "event_index": right.index,
                 "detected_at_index": right.confirmed_at,
             },
@@ -132,116 +129,7 @@ class HorizontalSupport(Pattern):
     def _best_candidate(
         self, data: Sequence[Bar], anchor_index: int | None = None
     ) -> HorizontalSupportCandidate | None:
-        swings = self.swing_detector.detect(data)
-        swings = self._with_boundary_swings(data, swings)
-        atr_values = average_true_range(data)
-        latest_tolerance = max(
-            1e-9,
-            atr_values[-1] * self.atr_tolerance_ratio,
-        )
-        candidates = self._double_low_candidates(data, swings, atr_values)
-        candidates.extend(
-            self._breakout_retest_candidates(data, swings, latest_tolerance)
-        )
-        if anchor_index is not None:
-            candidates = [
-                candidate for candidate in candidates
-                if candidate.points[1].index == anchor_index
-            ]
-        if not candidates:
-            return None
-        return max(candidates, key=lambda candidate: self._rank(candidate))
-
-    def _with_boundary_swings(self, data: Sequence[Bar], swings: Sequence[Pivot]) -> list[Pivot]:
-        merged = list(swings)
-        if not data:
-            return merged
-        right = getattr(self.swing_detector.pivot_detector, "right", 2)
-        left = getattr(self.swing_detector.pivot_detector, "left", 2)
-        if len(data) > right:
-            first_window = data[: right + 1]
-            if data[0].high == max(bar.high for bar in first_window):
-                merged.append(Pivot(0, right, data[0].high, "high"))
-            if data[0].low == min(bar.low for bar in first_window):
-                merged.append(Pivot(0, right, data[0].low, "low"))
-        if len(data) > left:
-            last_index = len(data) - 1
-            last_window = data[last_index - left :]
-            if data[last_index].low == min(bar.low for bar in last_window):
-                merged.append(Pivot(last_index, last_index, data[last_index].low, "low"))
-        return sorted(set(merged), key=lambda pivot: (pivot.index, pivot.kind, pivot.price))
-
-    def _double_low_candidates(
-        self,
-        data: Sequence[Bar],
-        swings: Sequence[Pivot],
-        atr_values: Sequence[float],
-    ) -> list[HorizontalSupportCandidate]:
-        lows = [pivot for pivot in swings if pivot.kind == "low"]
-        candidates: list[HorizontalSupportCandidate] = []
-        for left, right in combinations(lows, 2):
-            if right.index - left.index < self.min_span:
-                continue
-            tolerance = max(
-                1e-9,
-                atr_values[right.index] * self.atr_tolerance_ratio,
-            )
-            match = matching_level(
-                lower_support_levels(data[left.index]),
-                lower_support_levels(data[right.index]),
-                tolerance,
-            )
-            if match is None:
-                continue
-            level, level_error = match
-            if body_pierce_count(data, left.index, right.index, level) != 0:
-                continue
-            if not all_closes_above_level(data, left.index, right.index, level):
-                continue
-            candidates.append(
-                HorizontalSupportCandidate(
-                    "double_swing_low", (left, right), level, tolerance, 0, level_error
-                )
-            )
-        return candidates
-
-    def _breakout_retest_candidates(
-        self,
-        data: Sequence[Bar],
-        swings: Sequence[Pivot],
-        tolerance: float,
-    ) -> list[HorizontalSupportCandidate]:
-        highs = [pivot for pivot in swings if pivot.kind == "high"]
-        lows = [pivot for pivot in swings if pivot.kind == "low"]
-        candidates: list[HorizontalSupportCandidate] = []
-        for high in highs:
-            for low in lows:
-                if low.index <= high.index or low.index - high.index < self.min_span:
-                    continue
-                match = matching_level(
-                    upper_resistance_levels(data[high.index]),
-                    lower_support_levels(data[low.index]),
-                    tolerance,
-                )
-                if match is None:
-                    continue
-                level, level_error = match
-                breakout_index = first_accepted_breakout(
-                    data, high.index + 1, low.index, level
-                )
-                if breakout_index is None:
-                    continue
-                if not post_breakout_closes_hold(
-                    data, high.index, breakout_index, low.index, level, tolerance
-                ):
-                    continue
-                candidates.append(
-                    HorizontalSupportCandidate(
-                        "breakout_retest", (high, low), level, tolerance,
-                        1, level_error, breakout_index,
-                    )
-                )
-        return candidates
+        return self.candidate_finder.best(data, anchor_index)
 
     def _features_for_candidate(
         self, data: Sequence[Bar], candidate: HorizontalSupportCandidate
@@ -260,7 +148,22 @@ class HorizontalSupport(Pattern):
             "level_error": FeatureResult("level_error", candidate.level_error, 1.0),
             "level_error_atr": FeatureResult(
                 "level_error_atr",
-                candidate.level_error / candidate.tolerance * 0.1,
+                candidate.level_error / atr,
+                1.0,
+            ),
+            "contact_overlap_atr": FeatureResult(
+                "contact_overlap_atr",
+                candidate.contact_overlap / atr,
+                1.0,
+            ),
+            "contact_tolerance_atr": FeatureResult(
+                "contact_tolerance_atr",
+                candidate.contact_tolerance / atr,
+                1.0,
+            ),
+            "hold_tolerance_atr": FeatureResult(
+                "hold_tolerance_atr",
+                candidate.hold_tolerance / atr,
                 1.0,
             ),
             "breakout_index": FeatureResult(
@@ -274,21 +177,3 @@ class HorizontalSupport(Pattern):
                 1.0,
             ),
         }
-
-    @staticmethod
-    def _rank(
-        candidate: HorizontalSupportCandidate,
-    ) -> tuple[float, float, float, float]:
-        left, right = candidate.points
-        rule_priority = 1.0 if candidate.rule_type == "breakout_retest" else 0.0
-        recency_or_span = (
-            float(left.index)
-            if candidate.breakout_index is not None
-            else float(right.index - left.index)
-        )
-        return (
-            rule_priority,
-            recency_or_span,
-            -candidate.level_error,
-            -float(candidate.pierce_count),
-        )
