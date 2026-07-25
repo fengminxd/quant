@@ -7,6 +7,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from backtest.anchor_outcomes import AnchorTradeOutcomeEvaluator
 from data.market_config import load_market_data_config, load_supabase_config
 from data.supabase_store import SupabaseCandleStore
 from research.anchor_trade_report import write_anchor_trade_report
@@ -30,6 +31,8 @@ async def run_anchor_trade_stats(
     supabase_config: str = "config/supabase.json",
     page_size: int = 1000,
     nearby_hours: float = 24.0,
+    stop_loss_ratio: float = 0.015,
+    take_profit_ratio: float = 0.015,
 ) -> Path:
     """Scan the same cohort as the PDF and write only its outcome text."""
 
@@ -49,6 +52,10 @@ async def run_anchor_trade_stats(
         {timeframe: bars},
         output_path,
         source_pdf=source_pdf,
+        evaluator=AnchorTradeOutcomeEvaluator(
+            stop_loss_ratio=stop_loss_ratio,
+            take_profit_ratio=take_profit_ratio,
+        ),
     )
     LOGGER.info(
         "wrote %s from %s %s events=%s",
@@ -64,7 +71,7 @@ def main() -> None:
     """Parse CLI arguments and generate one text-only result report."""
 
     parser = argparse.ArgumentParser(
-        description="Write retrospective ±1.5% Pattern anchor outcomes"
+        description="Write retrospective configurable-barrier Pattern anchor outcomes"
     )
     parser.add_argument("--symbol", default="BTC")
     parser.add_argument("--timeframe", choices=SCAN_TIMEFRAMES, default="1h")
@@ -83,6 +90,8 @@ def main() -> None:
     parser.add_argument("--supabase-config", default="config/supabase.json")
     parser.add_argument("--page-size", type=int, default=1000)
     parser.add_argument("--nearby-hours", type=float, default=24.0)
+    parser.add_argument("--stop-loss-pct", type=float, default=1.5)
+    parser.add_argument("--take-profit-pct", type=float, default=1.5)
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO,
@@ -98,6 +107,8 @@ def main() -> None:
             supabase_config=args.supabase_config,
             page_size=args.page_size,
             nearby_hours=args.nearby_hours,
+            stop_loss_ratio=args.stop_loss_pct / 100.0,
+            take_profit_ratio=args.take_profit_pct / 100.0,
         )
     )
 

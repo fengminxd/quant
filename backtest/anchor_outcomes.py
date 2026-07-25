@@ -87,10 +87,21 @@ class AnchorTradeOutcomeEvaluator:
         self,
         barrier_ratio: float = 0.015,
         costs: TransactionCostModel | None = None,
+        *,
+        stop_loss_ratio: float | None = None,
+        take_profit_ratio: float | None = None,
     ) -> None:
         if not 0.0 < barrier_ratio < 1.0:
             raise ValueError("barrier_ratio must be between zero and one")
+        stop_ratio = barrier_ratio if stop_loss_ratio is None else stop_loss_ratio
+        target_ratio = barrier_ratio if take_profit_ratio is None else take_profit_ratio
+        if not 0.0 < stop_ratio < 1.0:
+            raise ValueError("stop_loss_ratio must be between zero and one")
+        if not 0.0 < target_ratio < 1.0:
+            raise ValueError("take_profit_ratio must be between zero and one")
         self.barrier_ratio = barrier_ratio
+        self.stop_loss_ratio = stop_ratio
+        self.take_profit_ratio = target_ratio
         self.costs = costs or TransactionCostModel()
 
     def evaluate(
@@ -122,11 +133,11 @@ class AnchorTradeOutcomeEvaluator:
         if entry <= 0.0:
             raise ValueError("entry price must be positive")
         if direction == "bullish":
-            stop = entry * (1.0 - self.barrier_ratio)
-            target = entry * (1.0 + self.barrier_ratio)
+            stop = entry * (1.0 - self.stop_loss_ratio)
+            target = entry * (1.0 + self.take_profit_ratio)
         else:
-            stop = entry * (1.0 + self.barrier_ratio)
-            target = entry * (1.0 - self.barrier_ratio)
+            stop = entry * (1.0 + self.stop_loss_ratio)
+            target = entry * (1.0 - self.take_profit_ratio)
         return AnchorTradePlan(
             event,
             direction,

@@ -225,3 +225,60 @@ def test_summary_and_text_report_keep_fixed_combo_as_separate_cohort(
     assert "FIXED_COMBO 符合入场规则案例" in text
     assert "止盈: 1 (100.00% / 全部案例)" in text
     assert "不重新" not in text
+
+
+@pytest.mark.parametrize(
+    ("pattern_id", "direction", "expected_stop", "expected_target"),
+    [
+        ("PATTERN_004", "bullish", 99.0, 103.0),
+        ("PATTERN_006", "bearish", 101.0, 97.0),
+    ],
+)
+def test_asymmetric_stop_and_target_ratios(
+    pattern_id: str,
+    direction: str,
+    expected_stop: float,
+    expected_target: float,
+) -> None:
+    bars = flat_bars()
+    anchors = (
+        PatternAnchor(0, bars[0].timestamp, 100.0),
+        PatternAnchor(1, bars[1].timestamp, 100.0),
+    )
+    evaluator = AnchorTradeOutcomeEvaluator(
+        stop_loss_ratio=0.01,
+        take_profit_ratio=0.03,
+    )
+
+    plan = evaluator.plan(event(pattern_id, anchors, bars), bars)
+
+    assert plan is not None
+    assert plan.direction == direction
+    assert plan.stop_price == pytest.approx(expected_stop)
+    assert plan.target_price == pytest.approx(expected_target)
+
+
+def test_report_displays_configured_barriers_and_reward_risk(tmp_path: Path) -> None:
+    bars = flat_bars(4)
+    anchors = (
+        PatternAnchor(0, bars[0].timestamp, 100.0),
+        PatternAnchor(1, bars[1].timestamp, 100.0),
+    )
+    output = tmp_path / "configured.txt"
+
+    write_anchor_trade_report(
+        [event("PATTERN_004", anchors, bars)],
+        {"1h": bars},
+        output,
+        source_pdf="rules.pdf",
+        evaluator=AnchorTradeOutcomeEvaluator(
+            stop_loss_ratio=0.01,
+            take_profit_ratio=0.03,
+        ),
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "止损比例 1.0000%" in text
+    assert "止盈比例 3.0000%" in text
+    assert "Gross R:R 3.00" in text
+    assert "stop=99.00000000 target=103.00000000" in text

@@ -15,9 +15,20 @@ dependencies = [
 
 [project.scripts]
 market-data-collector = "data.run_collector:main"
+trade-research-bundle = "research.run_trade_bundle:main"
 
 [tool.setuptools.packages.find]
-include = ["core*", "data*", "factors*", "features*", "indicators*", "patterns*"]
+include = [
+    "backtest*",
+    "core*",
+    "data*",
+    "factors*",
+    "features*",
+    "indicators*",
+    "patterns*",
+    "research*",
+    "visualization*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

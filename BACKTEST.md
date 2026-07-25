@@ -27,8 +27,9 @@ the required trend and third boundary anchor is reported as ineligible.
 
 - Entry price is the selected geometry-anchor price.
 - Outcome inspection begins on the next candle.
-- Bullish stop/target: entry × 0.985 / entry × 1.015.
-- Bearish stop/target: entry × 1.015 / entry × 0.985.
+- Default bullish stop/target: entry × 0.985 / entry × 1.015.
+- Default bearish stop/target: entry × 1.015 / entry × 0.985.
+- Stop-loss and take-profit ratios are independently configurable.
 - The first touched barrier determines the outcome.
 - If both barriers are touched in one OHLC candle, stop-loss wins
   conservatively because intrabar order is unknown.
@@ -55,3 +56,37 @@ The report gives:
 - percentages over resolved cases only;
 - a separate FIXED_COMBO subset;
 - full stop-loss, take-profit, unresolved, and ineligible case lists.
+
+## One-command research bundle
+
+Generate the rule-details PDF, anchor trade report, and continuous
+trade-point candlestick overview from one identical candle cohort:
+
+```bash
+.venv/bin/python -m research.run_trade_bundle \
+  --symbol BTC \
+  --timeframe 1h \
+  --start "2026-04-15 12:00" \
+  --end "2026-07-20 12:00" \
+  --stop-loss-pct 1.0 \
+  --take-profit-pct 3.0
+```
+
+`--start` and `--end` are inclusive candle-open times in UTC+8. They must
+align to the requested candle boundary and may not include an unclosed candle.
+The default output directory includes the requested range so separate runs do
+not overwrite each other. It also includes the barrier configuration:
+`logs/<symbol>_<timeframe>_trade_bundle/<start>_<end>_sl<SL>_tp<TP>/pdf`.
+An alternative directory can be selected with `--output-dir`.
+
+`--stop-loss-pct` and `--take-profit-pct` are percentages. Both default to
+`1.5`, preserving the original symmetric ±1.5% outcome definition.
+
+The three output names are:
+
+- `<SYMBOL>_<TIMEFRAME>_规则明细.pdf`
+- `<SYMBOL>_<TIMEFRAME>_开单报告.txt`
+- `<SYMBOL>_<TIMEFRAME>_开单点K线总览.pdf`
+
+Trade bundles support `15m`, `1h`, and `4h`. Daily candles remain HTF
+trend-context data and cannot directly produce trading Patterns.

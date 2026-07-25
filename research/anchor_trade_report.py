@@ -24,7 +24,7 @@ def write_anchor_trade_report(
     source_pdf: str | Path,
     evaluator: AnchorTradeOutcomeEvaluator | None = None,
 ) -> Path:
-    """Evaluate the PDF cohort and write a UTF-8 text report without redrawing."""
+    """Evaluate configurable barriers and write a UTF-8 report without redrawing."""
 
     engine = evaluator or AnchorTradeOutcomeEvaluator()
     outcomes: list[AnchorTradeOutcome] = []
@@ -102,7 +102,13 @@ def _report_header(
         "统计口径:",
         "- 入场价为规则指定的几何锚点价格。",
         "- 从锚点后的下一根 K 线开始检查，不使用入场锚点 K 线内未知路径。",
-        "- 多单止损/止盈为入场价 -/+1.5%；空单方向相反。",
+        (
+            f"- 止损比例 {evaluator.stop_loss_ratio:.4%}，"
+            f"止盈比例 {evaluator.take_profit_ratio:.4%}，"
+            f"Gross R:R "
+            f"{evaluator.take_profit_ratio / evaluator.stop_loss_ratio:.2f}；"
+            "空单方向相反。"
+        ),
         "- 同一根 K 线同时触发止损和止盈时，按保守原则计为止损。",
         "- 未决案例计入总案例分母；同时另列仅已平仓案例占比。",
         "- 三角趋势冻结在最早边界锚点，沿用 FIXED_COMBO 趋势结构门槛。",

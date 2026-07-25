@@ -25,6 +25,8 @@ def write_symbol_pdf(
     bars_by_timeframe: Mapping[str, Sequence[Bar]],
     events: Sequence[PatternScanEvent],
     output_path: str | Path,
+    *,
+    report_notes: Sequence[str] = (),
 ) -> Path:
     """Write one summary page and one candlestick page per detected structure."""
 
@@ -35,7 +37,13 @@ def write_symbol_pdf(
         key=lambda event: (event.timeframe, event.first_anchor_index, event.pattern_id),
     )
     with PdfPages(target) as pdf:
-        _write_summary_page(pdf, symbol, bars_by_timeframe, ordered_events)
+        _write_summary_page(
+            pdf,
+            symbol,
+            bars_by_timeframe,
+            ordered_events,
+            report_notes,
+        )
         for start in range(0, len(ordered_events), 4):
             _write_event_grid(
                 pdf,
@@ -50,6 +58,7 @@ def _write_summary_page(
     symbol: str,
     bars_by_timeframe: Mapping[str, Sequence[Bar]],
     events: Sequence[PatternScanEvent],
+    report_notes: Sequence[str] = (),
 ) -> None:
     figure, axis = plt.subplots(figsize=(11.69, 8.27))
     axis.axis("off")
@@ -76,6 +85,8 @@ def _write_summary_page(
         lines.append("    " + ", ".join(pattern_counts))
     priority_count = sum(event.priority_fixed_combination for event in events)
     lines.extend(("", f"Priority fixed combinations: {priority_count}"))
+    if report_notes:
+        lines.extend(("", "Trade outcome configuration:", *report_notes))
     axis.text(0.05, 0.95, "\n".join(lines), va="top", family="monospace", fontsize=11)
     pdf.savefig(figure, bbox_inches="tight")
     plt.close(figure)
