@@ -1,5 +1,18 @@
 # PATTERNS.md
 
+## Trading/report enablement
+
+`PATTERN_001`, `PATTERN_005`, and `PATTERN_008` are disabled by the central
+Pattern policy. Their detectors, factors, documentation, and direct research
+tests remain in the repository, but they cannot create Trade Plans or appear
+in standard, aggressive, or PDF reports. Standalone trading/report rules are
+`PATTERN_002`, `PATTERN_003`, `PATTERN_004`, and `PATTERN_007`.
+`PATTERN_006` is combination-only: its horizontal-resistance implementation
+remains available to `FIXED_COMBO_002`, `FIXED_COMBO_004`, and
+`FIXED_COMBO_008`, but an ordinary PATTERN_006 event cannot create an entry.
+`FIXED_COMBO_004` is retained for direct research only because its
+`PATTERN_008` parent is disabled.
+
 # Price Action Pattern Library
 
 ## Purpose
@@ -250,6 +263,7 @@ and invalidates the structure.
 
 -   Exactly 3 selected confirmed swing-low anchors
 -   P1 \< P2 \< P3 (positive slope)
+-   Three-anchor normalized trend strength must be \<= 0.16
 -   P1-P3 \>= 40 complete bars
 -   P1-P2 \>= 10 complete bars
 -   P2-P3 \>= 10 complete bars
@@ -259,7 +273,12 @@ and invalidates the structure.
 -   Evaluate all confirmed swing-low combinations; they need not be consecutive.
 -   Keep swing denoising independent from the trendline anchor-spacing rules.
 -   The middle swing low must fit the P1-P3 line within the configured ATR tolerance.
--   Each anchor line contact must be in or sufficiently close to the lower shadow.
+-   Fit `slope_log` by OLS over all three anchor lows and their bar indexes.
+-   At the P3 close, compute causal `atr_pct = ATR14 / close`.
+-   Reject the candidate when `slope_log / atr_pct > 0.16`.
+-   Every anchor line must cross the actual lower-shadow traded-price interval:
+    `low <= line <= min(open, close)`.
+-   ATR tolerance must never extend P2 contact below its candle low.
 -   No non-anchor candle body may cross the line between P1 and P3.
 -   Emit only after the third swing low's right-side confirmation window exists.
 -   Candle timestamps are opening timestamps; rules are timeframe agnostic.
@@ -273,6 +292,9 @@ and invalidates the structure.
 -   leg_2_span
 -   line_slope
 -   line_angle
+-   slope_log
+-   atr_pct
+-   normalized_trend_strength
 -   fit_error
 -   fit_error_atr
 -   body_violation_count
@@ -282,15 +304,17 @@ and invalidates the structure.
 
 ThreePointTrendlineSupportScore
 
-## Reference Case
+## Historical Invalidation Case
 
 HYPE 15m, UTC+8 opening timestamps: 2026-07-14 11:15,
 2026-07-14 20:00, and 2026-07-15 09:45. The corresponding Binance lows are
-62.555, 63.588, and 64.863, covering 35 and 55 bars respectively.
+62.555, 63.588, and 64.863, covering 35 and 55 bars respectively. The P1-P3
+line is below P2 low, so this former tolerance-based candidate is now invalid.
 
 ## Invalidation
 
-Any candle body crossing the line inside the anchor span.
+Any anchor without a real lower-shadow contact, or any candle body crossing
+the line inside the anchor span.
 
 ## Python Module
 
@@ -438,6 +462,13 @@ patterns/three_point_trendline_resistance.py
 
 # PATTERN_006 Horizontal Resistance
 
+## Trading Role
+
+This Pattern is not a standalone entry rule. It may create a trade event only
+when the parent PATTERN_006 event activates `FIXED_COMBO_002`. Its shared
+horizontal-resistance geometry is also evidence inside `FIXED_COMBO_004` and
+`FIXED_COMBO_008`.
+
 ## Market Logic
 
 Two widely separated swing highs rejected from one horizontal price level show
@@ -517,10 +548,12 @@ buyers have accepted price above the intervening supply boundary.
 -   Three confirmed swing lows ordered left shoulder, head, right shoulder
 -   Left-shoulder to right-shoulder span \>= 40 complete bar intervals
 -   Each shoulder-to-head leg \>= 10 bars
+-   Shorter shoulder-to-head leg span / longer leg span \>= 2/3
 -   Head below both shoulders by at least 0.5 ATR
 -   Shoulder price difference \<= 1.0 ATR
 -   One confirmed swing high in each leg forms the neckline
 -   Each neckline high is at least 5 bars from its adjacent lows
+-   The two neckline swing-high prices differ by no more than 1.0 causal ATR
 
 ## Detection Rules
 
@@ -528,22 +561,28 @@ buyers have accepted price above the intervening supply boundary.
 -   The head must be the lowest traded price between both shoulders.
 -   The left shoulder must be a new 40-bar low, preserving the preceding-decline context.
 -   The right shoulder must be the lowest pullback after the right neckline high.
+-   Evaluate every eligible left/right neckline-high pair and select the pair with
+    the smallest absolute price difference; reject the structure when no pair
+    meets the 1.0 ATR horizontal-neckline tolerance.
 -   Rules use identical bar counts for 15m, 1h, and 4h data.
 -   A confirmed right swing detects the structure without future bars.
 -   A close above the projected neckline within 40 bars sets `breakout_confirmed`.
--   Rank confirmed breakouts first, then shoulder alignment, duration symmetry,
-    head depth, span, and recency.
+-   Rank confirmed breakouts first, then neckline horizontality, shoulder
+    alignment, duration symmetry, head depth, span, and recency.
 
 ## Required Features
 
 -   span
 -   left_leg_span
 -   right_leg_span
+-   leg_span_difference
+-   leg_span_ratio
 -   shoulder_price_error_atr
 -   head_depth_atr
 -   head_extreme_error_atr
 -   duration_asymmetry
 -   neckline_slope_atr_per_bar
+-   neckline_price_error_atr
 -   prior_decline_atr
 -   breakout_confirmed
 -   breakout_distance_atr
@@ -555,44 +594,42 @@ buyers have accepted price above the intervening supply boundary.
 
 InverseHeadShouldersScore
 
-## Reference Case
+## Legacy Reference Invalidation
 
-ZECUSDT 1h, UTC+8 from 2026-06-25 21:00 through 2026-07-01 09:00:
+The former ZECUSDT 1h reference, UTC+8 from 2026-06-25 21:00 through
+2026-07-01 09:00, used:
 
 -   left shoulder: 2026-06-25 21:00 at 386.01;
 -   head: 2026-06-29 06:00 at 367.77;
 -   right shoulder: 2026-07-01 09:00 at 385.07;
 -   neckline highs: 2026-06-27 00:00 at 429.25 and
     2026-06-30 06:00 at 413.98;
--   the right shoulder is observable after five confirmation bars;
--   the projected neckline breakout is confirmed at 2026-07-01 21:00.
 
-On the Binance USD-M production feed configuration—5-left/5-right pivots and
-one-hour opening timestamps—the raw ZECUSDT structural and breakout
-score is 90.8737. The offline regression fixes the reported shoulder/head
-timestamps and verifies a detected, breakout-confirmed structure without
-network access.
-
-The same left-neckline candle at 2026-06-27 00:00 later becomes the source of
-a breakout-retest horizontal support at 2026-07-03 12:00. That retest is the
-first supplied anchor of a rising support line completed by 2026-07-06 20:00
-and 2026-07-07 12:00. The last supplied contact maps to the adjacent confirmed
-Swing Low at 13:00 with a one-bar offset and only 0.07 price difference.
+Its left and right shoulder-to-head spans are 81 and 51 bars. The shorter to
+longer ratio is approximately 0.6296, below 2/3, so this structure is no longer
+a valid PATTERN_007 and cannot produce a factor or entry.
 
 ## Invalidation
 
 -   Head is not the unique structural low between the shoulders.
 -   Right shoulder breaks below the ATR shoulder-alignment tolerance.
+-   Shorter shoulder-to-head leg span is less than 2/3 of the longer leg.
 -   No confirmed neckline high exists in either leg.
+-   Every eligible neckline-high pair differs by more than 1.0 ATR.
 -   A structure can remain detected but unconfirmed until the neckline is broken.
 
 ## Python Module
 
 patterns/inverse_head_shoulders.py
 
+patterns/inverse_head_shoulders_geometry.py
+
 ------------------------------------------------------------------------
 
 # PATTERN_008 Head and Shoulders Top
+
+Status: detector and factor retained for direct research; disabled as a
+trading, standard-report, aggressive-report, and PDF-report rule.
 
 ## Market Logic
 

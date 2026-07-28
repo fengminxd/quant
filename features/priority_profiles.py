@@ -24,7 +24,7 @@ _PATTERN_PROFILES = {
         "Three-point support priority combination",
         (
             "first_anchor_double_bottom_support",
-            "all_three_anchors_close_above_ema99",
+            "third_anchor_lower_shadow_touch_ema99_close_at_or_above",
             "third_anchor_breakout_retest_support",
         ),
     ),

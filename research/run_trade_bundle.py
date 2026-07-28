@@ -14,6 +14,7 @@ from backtest.anchor_outcomes import AnchorTradeOutcomeEvaluator
 from data.candles import Candle, timeframe_to_milliseconds
 from data.market_config import load_market_data_config, load_supabase_config
 from data.supabase_store import SupabaseCandleStore
+from features.trade_feasibility import TransactionCostModel
 from research.anchor_trade_report import write_anchor_trade_report
 from research.pattern_dedup import select_temporally_distinct_events
 from research.pattern_scan import HistoricalPatternScanner, SCAN_TIMEFRAMES, candles_to_bars
@@ -46,7 +47,10 @@ async def generate_trade_bundle(
     nearby_hours: float = 24.0,
     candles_per_page: int = 168,
     stop_loss_ratio: float = 0.015,
-    take_profit_ratio: float = 0.015,
+    lock_trigger_ratio: float = 0.015,
+    take_profit_ratio: float = 0.03,
+    entry_fee_rate: float = 0.0002,
+    exit_fee_rate: float = 0.0005,
     page_size: int = 1000,
     symbols_config: str | Path = "config/symbols.json",
     supabase_config: str | Path = "config/supabase.json",
@@ -60,8 +64,14 @@ async def generate_trade_bundle(
     start = _require_utc_plus_8(start, "start")
     end = _require_utc_plus_8(end, "end")
     interval_ms = _validate_range(timeframe, start, end, now_ms)
+    costs = TransactionCostModel(
+        entry_fee_rate=entry_fee_rate,
+        exit_fee_rate=exit_fee_rate,
+    )
     evaluator = AnchorTradeOutcomeEvaluator(
+        costs=costs,
         stop_loss_ratio=stop_loss_ratio,
+        lock_trigger_ratio=lock_trigger_ratio,
         take_profit_ratio=take_profit_ratio,
     )
     database = store or SupabaseCandleStore(load_supabase_config(supabase_config))
@@ -76,7 +86,9 @@ async def generate_trade_bundle(
     events = select_temporally_distinct_events(events, nearby_hours)
     range_name = (
         f"{start.strftime('%Y%m%dT%H%M')}_{end.strftime('%Y%m%dT%H%M')}"
-        f"_sl{_ratio_token(stop_loss_ratio)}_tp{_ratio_token(take_profit_ratio)}"
+        f"_sl{_ratio_token(stop_loss_ratio)}"
+        f"_lock{_ratio_token(lock_trigger_ratio)}"
+        f"_tp{_ratio_token(take_profit_ratio)}"
     )
     default_dir = (
         Path("logs")
@@ -97,8 +109,13 @@ async def generate_trade_bundle(
         rule_pdf,
         report_notes=(
             f"Stop loss: {stop_loss_ratio:.4%}",
-            f"Take profit: {take_profit_ratio:.4%}",
+            f"Profit lock trigger/price: {lock_trigger_ratio:.4%}",
+            f"Final take profit: {take_profit_ratio:.4%}",
             f"Gross reward/risk: {take_profit_ratio / stop_loss_ratio:.2f}",
+            f"Entry fee: {costs.entry_fee_rate:.4%}",
+            f"Exit fee: {costs.exit_fee_rate:.4%}",
+            f"Slippage per side: {costs.slippage_rate_per_side:.4%}",
+            f"Funding: {costs.funding_rate:.4%}",
         ),
     )
     write_anchor_trade_report(
@@ -117,7 +134,9 @@ async def generate_trade_bundle(
         points_pdf,
         candles_per_page=candles_per_page,
         stop_loss_ratio=stop_loss_ratio,
+        lock_trigger_ratio=lock_trigger_ratio,
         take_profit_ratio=take_profit_ratio,
+        costs=costs,
     )
     return TradeBundleResult(
         rule_pdf,
@@ -219,7 +238,22 @@ def main() -> None:
     parser.add_argument("--start", required=True, type=_parse_time, help="UTC+8, inclusive")
     parser.add_argument("--end", required=True, type=_parse_time, help="UTC+8, inclusive")
     parser.add_argument("--stop-loss-pct", type=float, default=1.5)
-    parser.add_argument("--take-profit-pct", type=float, default=1.5)
+    parser.add_argument("--lock-profit-pct", type=float, default=1.5)
+    parser.add_argument("--take-profit-pct", type=float, default=3.0)
+    parser.add_argument(
+        "--entry-fee-pct",
+        "--open-fee-pct",
+        dest="entry_fee_pct",
+        type=float,
+        default=0.02,
+    )
+    parser.add_argument(
+        "--exit-fee-pct",
+        "--close-fee-pct",
+        dest="exit_fee_pct",
+        type=float,
+        default=0.05,
+    )
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args()
     result = asyncio.run(
@@ -230,7 +264,10 @@ def main() -> None:
             args.end,
             output_dir=args.output_dir,
             stop_loss_ratio=args.stop_loss_pct / 100.0,
+            lock_trigger_ratio=args.lock_profit_pct / 100.0,
             take_profit_ratio=args.take_profit_pct / 100.0,
+            entry_fee_rate=args.entry_fee_pct / 100.0,
+            exit_fee_rate=args.exit_fee_pct / 100.0,
         )
     )
     print(f"rule_details_pdf={result.rule_details_pdf}")

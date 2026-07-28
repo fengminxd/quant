@@ -7,6 +7,11 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from core.models import Bar, PatternResult
+from core.pattern_policy import is_trading_pattern_enabled
+from features.entry_retest import (
+    EntryRetestAssessment,
+    EntryRetestFeatureExtractor,
+)
 from indicators.atr import average_true_range
 from indicators.swing import SwingDetector
 
@@ -23,6 +28,9 @@ class PatternTradePlan:
     target_price: float
     target_source: str = "explicit"
     entry_index: int | None = None
+    entry_source: str = "explicit"
+    structure_level: float | None = None
+    entry_distance_atr: float | None = None
 
 
 class PatternTradePlanExtractor:
@@ -32,11 +40,13 @@ class PatternTradePlanExtractor:
         self,
         stop_buffer_atr: float = 0.20,
         swing_detector: SwingDetector | None = None,
+        entry_extractor: EntryRetestFeatureExtractor | None = None,
     ) -> None:
         if stop_buffer_atr < 0.0:
             raise ValueError("stop_buffer_atr must be non-negative")
         self.stop_buffer_atr = stop_buffer_atr
         self.swing_detector = swing_detector or SwingDetector(min_bars=1)
+        self.entry_extractor = entry_extractor or EntryRetestFeatureExtractor()
 
     def extract(
         self,
@@ -44,9 +54,7 @@ class PatternTradePlanExtractor:
         data: Sequence[Bar],
         as_of_index: int | None = None,
         plan: PatternTradePlan | None = None,
-        direction_override: TradeDirection | None = None,
-        entry_index: int | None = None,
-        triangle_entry_mode: str | None = None,
+        entry_assessment: EntryRetestAssessment | None = None,
     ) -> tuple[PatternTradePlan | None, int, float]:
         """Return a plan using no bars later than ``as_of_index``."""
 
@@ -57,40 +65,51 @@ class PatternTradePlanExtractor:
             raise ValueError("as_of_index is outside supplied data")
         self._validate_visible(pattern, index)
         window = data[: index + 1]
-        if not pattern.detected or data[index].timeframe == "1d":
+        if (
+            not pattern.detected
+            or not is_trading_pattern_enabled(pattern.pattern_id)
+            or data[index].timeframe == "1d"
+        ):
             atr = max(average_true_range(window)[-1], 1e-12)
             return None, index, atr
-        direction = self._confirmed_direction(pattern)
-        if direction_override is not None:
-            if direction is not None and direction != direction_override:
-                raise ValueError("direction override conflicts with pattern direction")
-            if direction is None and pattern.pattern_id != "PATTERN_002":
-                raise ValueError("direction override is only allowed for triangles")
-            direction = direction_override
-        if direction is None:
-            atr = max(average_true_range(window)[-1], 1e-12)
-            return None, index, atr
-        trade_index = index if entry_index is None else entry_index
-        if trade_index < 0 or trade_index > index:
-            raise ValueError("entry_index must be visible at as_of_index")
-        atr = max(average_true_range(data[: trade_index + 1])[-1], 1e-12)
+        atr = max(average_true_range(window)[-1], 1e-12)
         if plan is not None:
+            direction = self._fixed_direction(pattern)
+            if pattern.pattern_id == "PATTERN_002":
+                assessment = self.entry_extractor.extract(pattern, window, index, atr)
+                direction = assessment.direction
+                if direction is None:
+                    return None, index, atr
+            direction = direction or plan.direction
             if plan.direction != direction:
                 raise ValueError("explicit plan direction conflicts with pattern direction")
             resolved = plan if plan.entry_index is not None else replace(
-                plan, entry_index=trade_index
+                plan, entry_index=index
             )
             return resolved, index, atr
+        assessment = entry_assessment or self.entry_extractor.extract(
+            pattern, window, index, atr
+        )
+        direction = assessment.direction
+        if not assessment.eligible or direction is None:
+            return None, index, atr
         extracted = self._default_plan(
             pattern,
             window,
-            trade_index,
+            index,
             atr,
             direction,
-            triangle_entry_mode,
+            assessment,
         )
         if extracted is not None and extracted.entry_index is None:
-            extracted = replace(extracted, entry_index=trade_index)
+            distance = assessment.features.get("entry_distance_atr")
+            extracted = replace(
+                extracted,
+                entry_index=index,
+                entry_source=assessment.structure_source,
+                structure_level=assessment.structure_level,
+                entry_distance_atr=distance.value if distance else None,
+            )
         return extracted, index, atr
 
     def _default_plan(
@@ -100,13 +119,13 @@ class PatternTradePlanExtractor:
         index: int,
         atr: float,
         direction: TradeDirection,
-        triangle_entry_mode: str | None,
+        assessment: EntryRetestAssessment,
     ) -> PatternTradePlan | None:
         entry = data[index].close
         buffer = atr * self.stop_buffer_atr
         pattern_id = pattern.pattern_id
         if pattern_id in {"PATTERN_001", "PATTERN_003", "PATTERN_005"}:
-            line = self._projected_line(pattern, index)
+            line = assessment.structure_level
             target = self._opposing_liquidity(data, index, entry, direction)
             if line is None or target is None:
                 return None
@@ -115,7 +134,7 @@ class PatternTradePlanExtractor:
                 direction, entry, stop, target, "confirmed_swing_liquidity"
             )
         if pattern_id in {"PATTERN_004", "PATTERN_006"}:
-            level = pattern.geometry.get("level")
+            level = assessment.structure_level
             target = self._opposing_liquidity(data, index, entry, direction)
             if not isinstance(level, (int, float)) or target is None:
                 return None
@@ -125,7 +144,7 @@ class PatternTradePlanExtractor:
             )
         if pattern_id == "PATTERN_002":
             return self._triangle_plan(
-                pattern, entry, index, buffer, direction, triangle_entry_mode
+                pattern, entry, index, buffer, direction, assessment
             )
         if pattern_id in {"PATTERN_007", "PATTERN_008"}:
             return self._head_shoulders_plan(pattern, entry, buffer, direction)
@@ -138,40 +157,29 @@ class PatternTradePlanExtractor:
         index: int,
         buffer: float,
         direction: TradeDirection,
-        entry_mode: str | None,
+        assessment: EntryRetestAssessment,
     ) -> PatternTradePlan | None:
         highs = self._points(pattern, "upper_points")
         lows = self._points(pattern, "lower_points")
         if not highs or not lows:
             return None
-        overlap_start = max(highs[0][0], lows[0][0])
         upper = self._geometry_line(pattern, "upper_line", index)
         lower = self._geometry_line(pattern, "lower_line", index)
-        upper_start = self._geometry_line(pattern, "upper_line", overlap_start)
-        lower_start = self._geometry_line(pattern, "lower_line", overlap_start)
-        if None in {upper, lower, upper_start, lower_start}:
+        level = assessment.structure_level
+        if upper is None or lower is None or level is None or upper <= lower:
             return None
-        height = float(upper_start) - float(lower_start)
-        if height <= 0.0:
-            return None
-        if direction == "bearish" and entry_mode == "upper_boundary_ema_rejection":
-            stop = max(float(upper), highs[-1][1]) + buffer
-            return PatternTradePlan(
-                direction,
-                entry,
-                stop,
-                float(lower),
-                "triangle_opposite_boundary",
-                index,
-            )
         if direction == "bullish":
+            if upper <= entry:
+                return None
             return PatternTradePlan(
-                direction, entry, upper - buffer, entry + height,
-                "triangle_measured_move", index,
+                direction, entry, level - buffer, upper,
+                "triangle_opposite_boundary",
             )
+        if lower >= entry:
+            return None
         return PatternTradePlan(
-            direction, entry, lower + buffer, entry - height,
-            "triangle_measured_move", index,
+            direction, entry, level + buffer, lower,
+            "triangle_opposite_boundary",
         )
 
     def _head_shoulders_plan(
@@ -219,13 +227,6 @@ class PatternTradePlanExtractor:
         ]
         return max(prices) if prices else None
 
-    def _projected_line(self, pattern: PatternResult, index: int) -> float | None:
-        line = self._geometry_line(pattern, "line", index)
-        if line is not None:
-            return line
-        points = self._points(pattern, "points")
-        return _line_value(points[0], points[-1], index) if len(points) >= 2 else None
-
     def _geometry_line(
         self, pattern: PatternResult, name: str, index: int
     ) -> float | None:
@@ -255,25 +256,14 @@ class PatternTradePlanExtractor:
         return int(value[0]) + global_offset, float(value[1])
 
     @staticmethod
-    def _confirmed_direction(pattern: PatternResult) -> TradeDirection | None:
+    def _fixed_direction(pattern: PatternResult) -> TradeDirection | None:
         fixed: Mapping[str, TradeDirection] = {
             "PATTERN_001": "bullish", "PATTERN_003": "bullish",
             "PATTERN_004": "bullish", "PATTERN_005": "bearish",
-            "PATTERN_006": "bearish",
+            "PATTERN_006": "bearish", "PATTERN_007": "bullish",
+            "PATTERN_008": "bearish",
         }
-        if pattern.pattern_id in fixed:
-            return fixed[pattern.pattern_id]
-        if pattern.pattern_id == "PATTERN_002":
-            breakout = pattern.metadata.get("breakout_direction")
-            if breakout in {"upside", "downside"}:
-                return "bullish" if breakout == "upside" else "bearish"
-            return None
-        state = pattern.metadata.get("state")
-        if pattern.pattern_id == "PATTERN_007" and state == "breakout_confirmed":
-            return "bullish"
-        if pattern.pattern_id == "PATTERN_008" and state == "breakdown_confirmed":
-            return "bearish"
-        return None
+        return fixed.get(pattern.pattern_id)
 
     @staticmethod
     def _validate_visible(pattern: PatternResult, as_of_index: int) -> None:

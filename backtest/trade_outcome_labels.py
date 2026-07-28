@@ -14,11 +14,17 @@ TRADE_LINE = re.compile(
     r"pattern=(?P<pattern>\S+) rule=(?P<rule>\S+) "
     r"outcome=(?P<outcome>\S+).*? direction=(?P<direction>\S+) "
     r"entry_rule='(?P<entry_rule>[^']+)' "
+    r"(?:structure_time=\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\+8 "
+    r"structure_level=-?\d+(?:\.\d+)? )?"
     r"entry_time=(?P<entry_time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC\+8 "
     r"entry=(?P<entry>\d+(?:\.\d+)?) "
     r"stop=(?P<stop>\d+(?:\.\d+)?) "
     r"target=(?P<target>\d+(?:\.\d+)?) "
+    r"(?:lock_trigger=(?P<lock_trigger>\d+(?:\.\d+)?) "
+    r"locked_stop=(?P<locked_stop>\d+(?:\.\d+)?) "
+    r"lock_time=(?:(?P<lock_time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC\+8|-) )?"
     r"exit_time=(?:(?P<exit_time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC\+8|-) "
+    r"(?:exit=(?P<exit>\d+(?:\.\d+)?|-) )?"
     r"bars_held="
 )
 
@@ -37,6 +43,10 @@ class AnchorTrade:
     stop: float
     target: float
     exit_time: datetime | None
+    exit_price: float | None = None
+    lock_trigger: float | None = None
+    locked_stop: float | None = None
+    lock_time: datetime | None = None
 
 
 def parse_anchor_trades(
@@ -52,6 +62,7 @@ def parse_anchor_trades(
         if not match:
             continue
         fields = match.groupdict()
+        exit_price = _exit_price(fields)
         trades.append(
             AnchorTrade(
                 trade_id=len(trades) + 1,
@@ -66,6 +77,22 @@ def parse_anchor_trades(
                 exit_time=(
                     _parse_utc_plus_8(fields["exit_time"])
                     if fields["exit_time"]
+                    else None
+                ),
+                exit_price=exit_price,
+                lock_trigger=(
+                    float(fields["lock_trigger"])
+                    if fields["lock_trigger"]
+                    else None
+                ),
+                locked_stop=(
+                    float(fields["locked_stop"])
+                    if fields["locked_stop"]
+                    else None
+                ),
+                lock_time=(
+                    _parse_utc_plus_8(fields["lock_time"])
+                    if fields["lock_time"]
                     else None
                 ),
             )
@@ -91,3 +118,14 @@ def timestamp_to_utc_plus_8(value: int | str | datetime) -> datetime:
 
 def _parse_utc_plus_8(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC_PLUS_8)
+
+
+def _exit_price(fields: dict[str, str | None]) -> float | None:
+    value = fields["exit"]
+    if value and value != "-":
+        return float(value)
+    if fields["outcome"] == "take_profit":
+        return float(fields["target"])
+    if fields["outcome"] == "stop_loss":
+        return float(fields["stop"])
+    return None

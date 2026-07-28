@@ -7,15 +7,12 @@ from dataclasses import dataclass
 
 from core.base import Factor, Pattern
 from core.models import Bar, FactorResult, FeatureResult, PatternResult
+from core.pattern_policy import is_trading_pattern_enabled
 from features.basic import clamp
 from features.trade_feasibility import TransactionCostModel, trade_feasibility_features
-from features.trade_plan import (
-    PatternTradePlan,
-    PatternTradePlanExtractor,
-    TradeDirection,
-)
-from features.triangle_context import bearish_triangle_continuation_features
-from factors.triangle_context import TriangleBearishContinuationScore
+from features.trade_plan import PatternTradePlan, PatternTradePlanExtractor
+from factors.entry_quality import EntryQualityScore
+from indicators.atr import average_true_range
 
 
 DEFAULT_MINIMUM_NET_REWARD_RISK: Mapping[str, float] = {
@@ -39,6 +36,7 @@ class PatternTradeFeasibilityEvaluation:
     features: Mapping[str, FeatureResult]
     factor: FactorResult
     directional_context: FactorResult | None = None
+    entry_quality: FactorResult | None = None
 
 
 class NetRewardRiskScore(Factor):
@@ -88,6 +86,7 @@ class PatternTradeFeasibilityScorer:
         costs: TransactionCostModel | None = None,
         minimums: Mapping[str, float] | None = None,
         factor: NetRewardRiskScore | None = None,
+        entry_factor: EntryQualityScore | None = None,
     ) -> None:
         self.extractor = extractor or PatternTradePlanExtractor()
         self.costs = costs or TransactionCostModel()
@@ -96,6 +95,7 @@ class PatternTradeFeasibilityScorer:
         if any(value <= 0.0 for value in self.minimums.values()):
             raise ValueError("minimum net reward/risk values must be positive")
         self.factor = factor or NetRewardRiskScore()
+        self.entry_factor = entry_factor or EntryQualityScore()
 
     def evaluate(
         self,
@@ -127,19 +127,21 @@ class PatternTradeFeasibilityScorer:
         index = len(data) - 1 if as_of_index is None else as_of_index
         if index < 0 or index >= len(data):
             raise ValueError("as_of_index is outside supplied data")
-        direction, entry_index, directional_context = _triangle_continuation_entry(
-            pattern, data[: index + 1]
-        )
+        window = data[: index + 1]
+        entry_assessment = None
+        entry_quality = None
+        if plan is None and pattern.detected and data[index].timeframe != "1d":
+            entry_atr = max(average_true_range(window)[-1], 1e-12)
+            entry_assessment = self.extractor.entry_extractor.extract(
+                pattern, window, index, entry_atr
+            )
+            entry_quality = self.entry_factor.calculate(entry_assessment.features)
         extracted, index, atr = self.extractor.extract(
             pattern,
             data,
             as_of_index,
             plan,
-            direction_override=direction,
-            entry_index=entry_index,
-            triangle_entry_mode=(
-                "upper_boundary_ema_rejection" if direction else None
-            ),
+            entry_assessment=entry_assessment,
         )
         features = trade_feasibility_features(
             extracted, atr, self.minimums[pattern.pattern_id], self.costs
@@ -147,26 +149,37 @@ class PatternTradeFeasibilityScorer:
         raw = self.factor.calculate(features)
         metadata = {
             **raw.metadata,
-            "pattern_gate_passed": pattern.detected,
+            "pattern_gate_passed": (
+                pattern.detected
+                and is_trading_pattern_enabled(pattern.pattern_id)
+            ),
+            "pattern_enabled": is_trading_pattern_enabled(pattern.pattern_id),
             "pattern_id": pattern.pattern_id,
             "as_of_index": index,
-            "fee_rate_per_side": self.costs.fee_rate_per_side,
+            "entry_fee_rate": self.costs.entry_fee_rate,
+            "exit_fee_rate": self.costs.exit_fee_rate,
             "slippage_rate_per_side": self.costs.slippage_rate_per_side,
             "funding_rate": self.costs.funding_rate,
             "stop_buffer_atr": self.extractor.stop_buffer_atr,
             "entry_index": extracted.entry_index if extracted else None,
             "entry_hypothesis": (
-                "third_upper_ema_rejection" if direction else "pattern_default"
+                extracted.entry_source if extracted else "waiting_for_structure_retest"
             ),
-            "directional_context_score": (
-                directional_context.score if directional_context else None
+            "entry_quality_score": entry_quality.score if entry_quality else None,
+            "entry_quality_active": (
+                entry_quality.metadata.get("active") if entry_quality else None
             ),
-            "downside_break_required": False if direction else None,
+            "structure_level": (
+                extracted.structure_level if extracted else None
+            ),
+            "downside_break_required": (
+                False if pattern.pattern_id == "PATTERN_002" else None
+            ),
             "emits_signal": False,
         }
         result = FactorResult(raw.name, raw.score, raw.features, metadata)
         return PatternTradeFeasibilityEvaluation(
-            pattern, extracted, features, result, directional_context
+            pattern, extracted, features, result, None, entry_quality
         )
 
     def score_detected(
@@ -177,7 +190,11 @@ class PatternTradeFeasibilityScorer:
         return [
             self.score(pattern, data)
             for pattern in patterns
-            if pattern.detected and pattern.pattern_id in self.minimums
+            if (
+                pattern.detected
+                and is_trading_pattern_enabled(pattern.pattern_id)
+                and pattern.pattern_id in self.minimums
+            )
         ]
 
 
@@ -195,29 +212,3 @@ def _ratio_score(ratio: float) -> float:
 
 def _value(features: Mapping[str, FeatureResult], name: str) -> float:
     return features[name].value if name in features else 0.0
-
-
-def _triangle_continuation_entry(
-    pattern: PatternResult,
-    data: Sequence[Bar],
-) -> tuple[TradeDirection | None, int | None, FactorResult | None]:
-    if (
-        not pattern.detected
-        or pattern.pattern_id != "PATTERN_002"
-        or pattern.metadata.get("breakout_direction") is not None
-    ):
-        return None, None, None
-    try:
-        features = bearish_triangle_continuation_features(data, pattern)
-    except (KeyError, ValueError):
-        return None, None, None
-    context = TriangleBearishContinuationScore().calculate(features)
-    if not bool(context.metadata.get("active", False)):
-        return None, None, context
-    points = pattern.geometry.get("upper_points", ())
-    if not isinstance(points, Sequence) or len(points) != 3:
-        return None, None, context
-    offset = pattern.metadata.get("window_start_index", 0)
-    global_offset = int(offset) if isinstance(offset, (int, float)) else 0
-    entry_index = int(points[-1][0]) + global_offset
-    return "bearish", entry_index, context

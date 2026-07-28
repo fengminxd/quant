@@ -11,18 +11,26 @@ from features.trade_plan import PatternTradePlan
 
 @dataclass(frozen=True)
 class TransactionCostModel:
-    """Per-side proportional execution costs plus one holding-cost estimate."""
+    """Asymmetric execution fees plus slippage and one holding-cost estimate."""
 
-    fee_rate_per_side: float = 0.0005
+    entry_fee_rate: float = 0.0002
+    exit_fee_rate: float = 0.0005
     slippage_rate_per_side: float = 0.0002
     funding_rate: float = 0.0
 
     def __post_init__(self) -> None:
-        rates = (self.fee_rate_per_side, self.slippage_rate_per_side, self.funding_rate)
+        rates = (
+            self.entry_fee_rate,
+            self.exit_fee_rate,
+            self.slippage_rate_per_side,
+            self.funding_rate,
+        )
         if any(rate < 0.0 for rate in rates):
             raise ValueError("transaction-cost rates must be non-negative")
-        if self.fee_rate_per_side + self.slippage_rate_per_side >= 1.0:
-            raise ValueError("per-side execution cost must be less than one")
+        if self.entry_fee_rate + self.slippage_rate_per_side >= 1.0:
+            raise ValueError("entry execution cost must be less than one")
+        if self.exit_fee_rate + self.slippage_rate_per_side >= 1.0:
+            raise ValueError("exit execution cost must be less than one")
 
 
 def trade_feasibility_features(
@@ -51,10 +59,11 @@ def trade_feasibility_features(
     prices = (plan.entry_price, plan.stop_price, plan.target_price)
     valid = gross_risk > 0.0 and gross_reward > 0.0 and all(price > 0.0 for price in prices)
     confidence = float(valid)
-    execution_rate = costs.fee_rate_per_side + costs.slippage_rate_per_side
-    entry_cost = plan.entry_price * execution_rate
-    stop_cost = plan.stop_price * execution_rate
-    target_cost = plan.target_price * execution_rate
+    entry_rate = costs.entry_fee_rate + costs.slippage_rate_per_side
+    exit_rate = costs.exit_fee_rate + costs.slippage_rate_per_side
+    entry_cost = plan.entry_price * entry_rate
+    stop_cost = plan.stop_price * exit_rate
+    target_cost = plan.target_price * exit_rate
     funding_cost = plan.entry_price * costs.funding_rate
     net_risk = gross_risk + entry_cost + stop_cost + funding_cost
     net_reward = gross_reward - entry_cost - target_cost - funding_cost

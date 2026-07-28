@@ -50,7 +50,9 @@ the anchor is a pivot but cannot change its feature values.
 
 ## Post-Pattern Trade Feasibility
 
-PatternTradePlanExtractor.extract(pattern_result, data, as_of_index, plan)
+PatternTradePlanExtractor.extract(
+    pattern_result, data, as_of_index, plan, entry_assessment
+)
     -\>tuple[PatternTradePlan | None, int, float]
 
 trade_feasibility_features(plan, atr, minimum_net_reward_risk, costs)-\>dict
@@ -66,13 +68,14 @@ PatternTradeFeasibilityScorer.score(pattern_result, data, as_of_index, plan)
 PatternTradeFeasibilityScorer.score_detected(pattern_results, data)-\>list
 
 This layer runs after Pattern detection and does not change Pattern quality.
-Default plans use structural invalidation and price-action targets; callers may
-provide an explicit plan for execution-specific entry/retest logic. A triangle
-may activate either on a boundary break or on an active bearish-continuation
-context at the third upper EMA99 rejection; head-and-shoulders still requires
-neckline confirmation. `as_of_index` truncation and polling-window offsets
-preserve causal geometry. The result exposes `active`, `feasible`, cost
-assumptions, and `emits_signal=False` metadata.
+Default plans require a causal structure-zone retest and directional close
+reclaim. A triangle first freezes prior trend at the earliest boundary anchor:
+an uptrend uses the third lower-boundary anchor zone and a downtrend uses the
+third upper-boundary anchor zone. Inverse and top head-and-shoulders use the
+right-shoulder zone without requiring a prior neckline break. `as_of_index`
+truncation and polling-window offsets preserve causal geometry. The result
+exposes `EntryQualityScore`, reward/risk feasibility, costs, and
+`emits_signal=False` metadata.
 
 ## Feature
 
@@ -141,7 +144,7 @@ Support confluence is event anchored: pattern detection may use bars through
 the swing-confirmation index, while EMA99 and reclaim features are frozen at
 the third-point candle close.
 
-## Retrospective Anchor Outcome Audit
+## Causal Anchor Outcome Audit
 
 AnchorTradeOutcomeEvaluator.plan(event, bars)-\>AnchorTradePlan | None
 
@@ -150,13 +153,37 @@ AnchorTradeOutcomeEvaluator.evaluate(event, bars)-\>AnchorTradeOutcome | None
 write_anchor_trade_report(events, bars_by_timeframe, output_path, source_pdf)
     -\>Path
 
-The audit maps PATTERN_002-008 to their requested second, right-shoulder, or
-third anchor and labels the first gross ±1.5% barrier touch. Triangle direction
-is frozen at the earliest boundary anchor. Same-candle dual touches resolve
-stop-first, unresolved cases remain in the denominator, and FIXED_COMBO
-outcomes are summarized separately. Default net-return estimates include
-fees and slippage.
+The audit accepts standalone rules PATTERN_002, PATTERN_003, PATTERN_004,
+and PATTERN_007. PATTERN_006 is combination-only: it may enter
+only as FIXED_COMBO_002, while its horizontal-resistance matcher remains
+component evidence for FIXED_COMBO_004 and FIXED_COMBO_008. PATTERN_001,
+PATTERN_005, PATTERN_008, and FIXED_COMBO_006 are rejected by Trade Plan,
+feasibility, scanner, and report gates. FIXED_COMBO_004 remains available only
+for direct research because its PATTERN_008 parent is disabled. Enabled
+structures scan the first eleven closed
+candles after detection for a 0.25 ATR zone touch and
+directional close reclaim within 0.35 ATR. Entry uses that candle close; the
+source geometry remains `structure_anchor`. Triangle trend is frozen at the
+earliest boundary anchor. The standard report keeps its configured initial
+stop, activates a stop at 1.5% profit from the candle after that threshold is
+reached, and closes at the final 3% target. Ambiguous same-candle OHLC paths
+resolve conservatively: initial stop wins before lock activation and protected
+profit wins after activation. Unresolved cases remain in the denominator, and
+FIXED_COMBO outcomes are summarized separately.
+`TransactionCostModel` defaults to 0.02% entry and 0.05% exit fees, plus 0.02%
+slippage per side. See `BACKTEST.md`.
 
-This API is deliberately retrospective: it records Pattern confirmation delay
-and `causal_at_anchor` rather than emitting a live signal from an anchor that
-was not yet confirmed. See `BACKTEST.md`.
+## Aggressive Confirmed-Pivot Report
+
+AggressivePatternScanner.scan(symbol, timeframe, bars)
+    -\>list[PatternScanEvent]
+
+AggressiveAnchorStrategyEvaluator.plan(event, bars)
+    -\>AggressiveTradePlan | None
+
+The aggressive scanner is independent from the standard report. It preserves
+the complete price-action geometry, then waits for the requested final anchor
+to be confirmed as a Pivot Low or Pivot High before activating the reference
+order. Pattern-specific anchor selection, candle-body reference prices, and
+the post-confirmation six-candle limit-fill window are documented in
+`BACKTEST.md`.

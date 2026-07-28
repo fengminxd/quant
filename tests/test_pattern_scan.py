@@ -48,8 +48,8 @@ class RepeatingDetector:
         if as_of_index not in (40, 41):
             return []
         result = PatternResult(
-            "PATTERN_006",
-            "Horizontal Resistance",
+            "PATTERN_004",
+            "Horizontal Support",
             True,
             88.0,
             geometry={"points": [(0, 101.0), (40, 141.0)]},
@@ -61,10 +61,17 @@ class RepeatingDetector:
         return [PatternPollResult(timeframe, as_of_index, 0, result)]
 
 
-def test_scan_registry_contains_002_through_008_only() -> None:
+def test_scan_registry_keeps_combination_only_analysis_patterns() -> None:
     ids = [pattern.pattern_id for pattern in scan_patterns()]
 
-    assert ids == [f"PATTERN_{number:03d}" for number in range(2, 9)]
+    assert ids == [
+        "PATTERN_002",
+        "PATTERN_003",
+        "PATTERN_004",
+        "PATTERN_006",
+        "PATTERN_007",
+        "PATTERN_008",
+    ]
 
 
 def test_historical_scanner_deduplicates_identical_anchors() -> None:
@@ -234,7 +241,7 @@ def test_fixed_combo_pdf_explains_conditions_and_draws_level_evidence() -> None:
         priority_combination_score=66.6667,
         priority_matched_conditions=(
             "first_anchor_double_bottom_support",
-            "all_three_anchors_close_above_ema99",
+            "third_anchor_lower_shadow_touch_ema99_close_at_or_above",
         ),
         priority_level_relations=(relation,),
     )
@@ -246,7 +253,10 @@ def test_fixed_combo_pdf_explains_conditions_and_draws_level_evidence() -> None:
     assert "Fixed combination: FIXED_COMBO_005" in title
     assert "Combined conditions (2):" in title
     assert "P1 + prior anchor = double-bottom support" in title
-    assert "P1/P2/P3 closes > EMA99" in title
+    assert (
+        "P3 lower shadow touches EMA99; close >= EMA99"
+        in " ".join(title.split())
+    )
     assert any(
         text.get_text().startswith("S1: double-bottom support")
         for text in axis.texts

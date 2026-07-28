@@ -61,6 +61,8 @@ def test_generate_trade_bundle_writes_three_synchronized_files(tmp_path) -> None
             now_ms=round((end + timedelta(hours=2)).timestamp() * 1000),
             stop_loss_ratio=0.01,
             take_profit_ratio=0.03,
+            entry_fee_rate=0.0003,
+            exit_fee_rate=0.0007,
         )
     )
 
@@ -72,8 +74,11 @@ def test_generate_trade_bundle_writes_three_synchronized_files(tmp_path) -> None
     assert result.trade_points_pdf.name == "BTC_1h_开单点K线总览.pdf"
     report = result.trade_report_txt.read_text(encoding="utf-8")
     assert "止损比例 1.0000%" in report
-    assert "止盈比例 3.0000%" in report
+    assert "浮盈达到 1.5000%" in report
+    assert "最终止盈 3.0000%" in report
     assert "Gross R:R 3.00" in report
+    assert "开单手续费 0.0300%" in report
+    assert "平仓手续费 0.0700%" in report
     assert all(
         path.is_file()
         for path in (

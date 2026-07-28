@@ -15,6 +15,13 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.collections import LineCollection, PolyCollection
 
 from core.models import Bar
+from core.pattern_policy import (
+    ACTIVE_TRADING_PATTERN_IDS,
+    COMBINATION_ONLY_PATTERN_IDS,
+    DISABLED_FIXED_COMBINATION_IDS,
+    DISABLED_TRADING_PATTERN_IDS,
+    is_trade_event_enabled,
+)
 from indicators.ema import exponential_moving_average
 from research.pattern_scan import PatternScanEvent, format_utc_plus_8
 from visualization.pattern_text import event_title, level_relation_kind
@@ -33,7 +40,14 @@ def write_symbol_pdf(
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     ordered_events = sorted(
-        events,
+        (
+            event
+            for event in events
+            if is_trade_event_enabled(
+                event.pattern_id,
+                event.priority_combination_id,
+            )
+        ),
         key=lambda event: (event.timeframe, event.first_anchor_index, event.pattern_id),
     )
     with PdfPages(target) as pdf:
@@ -65,7 +79,10 @@ def _write_summary_page(
     counts = Counter((event.timeframe, event.pattern_id) for event in events)
     lines = [
         f"Historical Pattern Scan: {symbol}",
-        "Patterns: PATTERN_002 through PATTERN_008 (PATTERN_001 excluded)",
+        f"Active Patterns: {', '.join(ACTIVE_TRADING_PATTERN_IDS)}",
+        f"Combination-only: {', '.join(sorted(COMBINATION_ONLY_PATTERN_IDS))}",
+        f"Disabled: {', '.join(sorted(DISABLED_TRADING_PATTERN_IDS))}",
+        f"Disabled combos: {', '.join(sorted(DISABLED_FIXED_COMBINATION_IDS))}",
         f"Detected structures: {len(events)}",
         "",
     ]
@@ -80,7 +97,10 @@ def _write_summary_page(
         lines.append(f"{timeframe}: {len(bars)} candles, {period}")
         pattern_counts = [
             f"{pattern_id}={counts[(timeframe, pattern_id)]}"
-            for pattern_id in (f"PATTERN_{number:03d}" for number in range(2, 9))
+            for pattern_id in (
+                *ACTIVE_TRADING_PATTERN_IDS,
+                *sorted(COMBINATION_ONLY_PATTERN_IDS),
+            )
         ]
         lines.append("    " + ", ".join(pattern_counts))
     priority_count = sum(event.priority_fixed_combination for event in events)

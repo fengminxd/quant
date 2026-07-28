@@ -86,7 +86,6 @@ def test_existing_pattern_results_feed_context_profiles(
     [
         three_point_support_case,
         horizontal_support_case,
-        three_point_resistance_case,
         horizontal_resistance_case,
         inverse_head_shoulders_case,
         head_shoulders_top_case,
@@ -105,12 +104,21 @@ def test_existing_pattern_results_feed_trade_feasibility(
         entry + 3.0 if bullish else entry - 3.0,
     )
     scorer = PatternTradeFeasibilityScorer(
-        costs=TransactionCostModel(0.0, 0.0, 0.0)
+        costs=TransactionCostModel(
+            entry_fee_rate=0.0,
+            exit_fee_rate=0.0,
+            slippage_rate_per_side=0.0,
+        )
     )
 
     evaluation = scorer.score(pattern, bars, plan=plan)
 
-    assert evaluation.factor.metadata["pattern_gate_passed"] is True
+    enabled = pattern.pattern_id not in {"PATTERN_006", "PATTERN_008"}
+    assert evaluation.factor.metadata["pattern_gate_passed"] is enabled
+    if not enabled:
+        assert evaluation.plan is None
+        assert evaluation.factor.metadata["active"] is False
+        return
     assert evaluation.factor.metadata["active"] is True
     assert evaluation.factor.metadata["feasible"] is True
     assert evaluation.factor.metadata["emits_signal"] is False

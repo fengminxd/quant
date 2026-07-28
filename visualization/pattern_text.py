@@ -15,7 +15,9 @@ CONDITION_LABELS = {
     "head_open_below_ema99": "Head open < EMA99",
     "head_horizontal_resistance": "Head + prior anchor = horizontal resistance",
     "first_anchor_double_bottom_support": "P1 + prior anchor = double-bottom support",
-    "all_three_anchors_close_above_ema99": "P1/P2/P3 closes > EMA99",
+    "third_anchor_lower_shadow_touch_ema99_close_at_or_above": (
+        "P3 lower shadow touches EMA99; close >= EMA99"
+    ),
     "third_anchor_breakout_retest_support": (
         "P3 + prior anchor = breakout-retest support"
     ),

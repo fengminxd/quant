@@ -90,22 +90,14 @@ def test_mu_upper_third_wick_rejects_ema99_and_context_is_bearish() -> None:
     assert factor.metadata["downside_break_required"] is False
 
     feasibility = PatternTradeFeasibilityScorer().score(result, bars)
-    assert feasibility.plan is not None
-    assert feasibility.plan.direction == "bearish"
-    assert feasibility.plan.entry_index == next(
-        index for index, bar in enumerate(bars) if bar.timestamp == UPPER_THIRD
-    )
-    assert feasibility.plan.entry_price == pytest.approx(1000.30)
-    assert feasibility.plan.stop_price == pytest.approx(1013.4755861, abs=1e-7)
-    assert feasibility.plan.target_price == pytest.approx(911.6441935, abs=1e-7)
-    assert feasibility.factor.score == 100.0
-    assert feasibility.factor.metadata["active"] is True
-    assert feasibility.factor.metadata["feasible"] is True
-    assert feasibility.factor.metadata["net_reward_risk"] == pytest.approx(5.986704)
+    assert feasibility.plan is None
+    assert feasibility.entry_quality is not None
+    assert feasibility.entry_quality.metadata["active"] is False
+    assert feasibility.factor.metadata["active"] is False
     assert feasibility.factor.metadata["downside_break_required"] is False
 
 
-def test_mu_third_upper_contact_is_actionable_at_its_close_without_future() -> None:
+def test_mu_third_upper_contact_does_not_bypass_new_trend_and_anchor_gate() -> None:
     bars = mu_bars()
     target = next(index for index, bar in enumerate(bars) if bar.timestamp == UPPER_THIRD)
     detector = PatternDetector([context_triangle()])
@@ -126,9 +118,9 @@ def test_mu_third_upper_contact_is_actionable_at_its_close_without_future() -> N
         at_close, bars, as_of_index=target
     )
     assert before_trade.plan is None
-    assert at_close_trade.plan is not None
-    assert at_close_trade.plan.entry_index == target
-    assert at_close_trade.factor.metadata["feasible"] is True
+    assert at_close_trade.plan is None
+    assert at_close_trade.entry_quality is not None
+    assert at_close_trade.entry_quality.metadata["active"] is False
 
     original = bearish_triangle_continuation_features(bars, at_close)
     changed = list(bars)

@@ -119,8 +119,26 @@ class PriorityCombinationFeatureExtractor:
                 conditions[0],
                 self.level_matcher.double_bottom(data, points[0], as_of),
             )
-            features[conditions[1]] = self._all_ema_condition(
-                data, ema, points, "close", above=True, name=conditions[1]
+            p3 = points[2]
+            bar = data[p3]
+            ema99 = ema[p3]
+            warmed = p3 + 1 >= self.ema_period
+            shadow_touch = bar.low <= ema99 <= min(bar.open, bar.close)
+            close_reclaim = bar.close >= ema99
+            features[conditions[1]] = self._flag(
+                conditions[1],
+                warmed and shadow_touch and close_reclaim,
+                1.0 if warmed else 0.0,
+                {
+                    "anchor_index": p3,
+                    "low": bar.low,
+                    "body_low": min(bar.open, bar.close),
+                    "close": bar.close,
+                    "ema99": ema99,
+                    "lower_shadow_touched_ema99": shadow_touch,
+                    "close_at_or_above_ema99": close_reclaim,
+                    "ema_period": self.ema_period,
+                },
             )
             features[conditions[2]] = self._level_feature(
                 conditions[2],
@@ -208,29 +226,6 @@ class PriorityCombinationFeatureExtractor:
                 "shadow_crossed_ema99": shadow_cross,
                 "ema_period": self.ema_period,
             },
-        )
-
-    def _all_ema_condition(
-        self,
-        data: Sequence[Bar],
-        ema: Sequence[float],
-        indexes: Sequence[int],
-        field: str,
-        *,
-        above: bool,
-        name: str,
-    ) -> FeatureResult:
-        checks = [
-            self._ema_condition(
-                data, ema, index, field, above=above, name=f"{name}_{position}"
-            )
-            for position, index in enumerate(indexes, start=1)
-        ]
-        return self._flag(
-            name,
-            all(check.value == 1.0 for check in checks),
-            min(check.confidence for check in checks),
-            {"anchors": tuple(check.metadata for check in checks)},
         )
 
     @staticmethod

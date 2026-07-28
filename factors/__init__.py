@@ -9,6 +9,7 @@ from factors.context_factors import (
     PriorLowBreakdownScore,
     UptrendStructureScore,
 )
+from factors.entry_quality import EntryQualityScore
 from factors.pattern_context import (
     DEFAULT_PATTERN_FACTOR_PROFILES,
     FactorSpec,
@@ -47,6 +48,7 @@ __all__ = [
     "DowntrendStructureScore",
     "DEFAULT_MINIMUM_NET_REWARD_RISK",
     "EMA99ContextScore",
+    "EntryQualityScore",
     "FactorSpec",
     "HammerScore",
     "HorizontalResistanceScore",

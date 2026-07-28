@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 
 from core.base import Factor
 from core.models import Bar, FactorResult, FeatureResult, PatternResult
+from core.pattern_policy import is_fixed_combination_enabled
 from features.priority_combinations import PriorityCombinationFeatureExtractor
 from features.priority_profiles import PriorityCombinationFeatureSet
 
@@ -118,12 +119,22 @@ class PriorityCombinationScorer:
         )
         if feature_set is None:
             return self._inactive(pattern, "combination_not_configured")
+        if not is_fixed_combination_enabled(feature_set.combination_id):
+            return self._inactive(
+                pattern,
+                "combination_disabled",
+                feature_set.combination_id,
+            )
         return PriorityFixedCombinationScore(feature_set).calculate(
             feature_set.features
         )
 
     @staticmethod
-    def _inactive(pattern: PatternResult, state: str) -> FactorResult:
+    def _inactive(
+        pattern: PatternResult,
+        state: str,
+        combination_id: str | None = None,
+    ) -> FactorResult:
         return FactorResult(
             "Priority Fixed Combination Score",
             0.0,
@@ -133,6 +144,7 @@ class PriorityCombinationScorer:
                 "priority_fixed_combination": False,
                 "pattern_id": pattern.pattern_id,
                 "state": state,
+                "combination_id": combination_id,
                 "matched_conditions": (),
             },
         )

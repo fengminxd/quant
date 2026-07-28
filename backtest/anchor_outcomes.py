@@ -1,4 +1,4 @@
-"""Retrospective outcomes for explicitly requested Pattern anchor entries."""
+"""Causal outcomes for standard Pattern structure-retest entries."""
 
 from __future__ import annotations
 
@@ -7,17 +7,20 @@ from dataclasses import dataclass
 from typing import Literal
 
 from core.models import Bar
-from features.context import ContextFeatureExtractor, directional_structure_score
+from backtest.causal_anchor_entries import CausalAnchorEntryResolver
+from backtest.standard_profit_lock import resolve_standard_exit
 from features.trade_feasibility import TransactionCostModel
 from features.trade_plan import TradeDirection
 from research.pattern_events import PatternAnchor, PatternScanEvent
 
-OutcomeStatus = Literal["take_profit", "stop_loss", "unresolved"]
+OutcomeStatus = Literal[
+    "take_profit", "protected_profit", "stop_loss", "unresolved"
+]
 
 
 @dataclass(frozen=True)
 class AnchorTradePlan:
-    """One retrospective anchor entry with symmetric percentage barriers."""
+    """One causal reclaim entry with configurable percentage barriers."""
 
     event: PatternScanEvent
     direction: TradeDirection
@@ -28,12 +31,17 @@ class AnchorTradePlan:
     entry_rule: str
     detected_index: int
     trend_score: float | None = None
+    structure_anchor: PatternAnchor | None = None
+    entry_quality_score: float | None = None
+    lock_trigger_price: float | None = None
+    locked_stop_price: float | None = None
 
     @property
     def confirmation_delay_bars(self) -> int:
         """Return how many bars after the anchor the Pattern became known."""
 
-        return self.detected_index - self.entry_anchor.index
+        anchor = self.structure_anchor or self.entry_anchor
+        return self.detected_index - anchor.index
 
     @property
     def causal_at_anchor(self) -> bool:
@@ -41,10 +49,22 @@ class AnchorTradePlan:
 
         return self.confirmation_delay_bars <= 0
 
+    @property
+    def entry_wait_bars(self) -> int:
+        """Return closed bars waited after Pattern detection."""
+
+        return self.entry_anchor.index - self.detected_index
+
+    @property
+    def causal_at_entry(self) -> bool:
+        """Whether the entry occurs no earlier than Pattern detection."""
+
+        return self.entry_wait_bars >= 0
+
 
 @dataclass(frozen=True)
 class AnchorTradeOutcome:
-    """First barrier touched after one retrospective anchor entry."""
+    """First barrier touched after one causal reclaim entry."""
 
     plan: AnchorTradePlan
     status: OutcomeStatus
@@ -54,6 +74,7 @@ class AnchorTradeOutcome:
     bars_held: int | None = None
     simultaneous_touch: bool = False
     net_return: float | None = None
+    lock_timestamp: int | str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +83,7 @@ class AnchorTradeSummary:
 
     total: int
     take_profit: int
+    protected_profit: int
     stop_loss: int
     unresolved: int
 
@@ -72,7 +94,13 @@ class AnchorTradeSummary:
 
     @property
     def resolved(self) -> int:
-        return self.take_profit + self.stop_loss
+        return self.take_profit + self.protected_profit + self.stop_loss
+
+    @property
+    def profitable(self) -> int:
+        """Return all exits closed above the cost-unadjusted entry."""
+
+        return self.take_profit + self.protected_profit
 
     def resolved_percentage(self, count: int) -> float:
         """Return a percentage using only closed cases as denominator."""
@@ -81,7 +109,7 @@ class AnchorTradeSummary:
 
 
 class AnchorTradeOutcomeEvaluator:
-    """Resolve requested anchor rules and label the first ± barrier touch."""
+    """Resolve standard entries with initial stop, profit lock, and final target."""
 
     def __init__(
         self,
@@ -89,20 +117,28 @@ class AnchorTradeOutcomeEvaluator:
         costs: TransactionCostModel | None = None,
         *,
         stop_loss_ratio: float | None = None,
-        take_profit_ratio: float | None = None,
+        lock_trigger_ratio: float = 0.015,
+        take_profit_ratio: float = 0.03,
+        entry_resolver: CausalAnchorEntryResolver | None = None,
     ) -> None:
         if not 0.0 < barrier_ratio < 1.0:
             raise ValueError("barrier_ratio must be between zero and one")
         stop_ratio = barrier_ratio if stop_loss_ratio is None else stop_loss_ratio
-        target_ratio = barrier_ratio if take_profit_ratio is None else take_profit_ratio
+        target_ratio = take_profit_ratio
         if not 0.0 < stop_ratio < 1.0:
             raise ValueError("stop_loss_ratio must be between zero and one")
         if not 0.0 < target_ratio < 1.0:
             raise ValueError("take_profit_ratio must be between zero and one")
+        if not 0.0 < lock_trigger_ratio < 1.0:
+            raise ValueError("lock_trigger_ratio must be between zero and one")
+        if lock_trigger_ratio >= target_ratio:
+            raise ValueError("lock_trigger_ratio must be below take_profit_ratio")
         self.barrier_ratio = barrier_ratio
         self.stop_loss_ratio = stop_ratio
+        self.lock_trigger_ratio = lock_trigger_ratio
         self.take_profit_ratio = target_ratio
         self.costs = costs or TransactionCostModel()
+        self.entry_resolver = entry_resolver or CausalAnchorEntryResolver()
 
     def evaluate(
         self,
@@ -119,35 +155,39 @@ class AnchorTradeOutcomeEvaluator:
         event: PatternScanEvent,
         bars: Sequence[Bar],
     ) -> AnchorTradePlan | None:
-        """Map one PDF event to the requested Pattern-specific anchor."""
+        """Map one event to the first eligible post-detection reclaim."""
 
         if not bars:
             raise ValueError("at least one bar is required")
-        direction, anchor, rule, trend_score = self._entry_definition(event, bars)
-        if direction is None or anchor is None or rule is None:
-            return None
-        if not 0 <= anchor.index < len(bars):
-            raise ValueError("entry anchor is outside supplied bars")
         detected_index = _timestamp_index(bars, event.detected_timestamp)
-        entry = float(anchor.price)
+        resolved = self.entry_resolver.resolve(event, bars, detected_index)
+        if resolved is None:
+            return None
+        entry = float(resolved.entry_anchor.price)
         if entry <= 0.0:
             raise ValueError("entry price must be positive")
-        if direction == "bullish":
+        if resolved.direction == "bullish":
             stop = entry * (1.0 - self.stop_loss_ratio)
+            lock_trigger = entry * (1.0 + self.lock_trigger_ratio)
             target = entry * (1.0 + self.take_profit_ratio)
         else:
             stop = entry * (1.0 + self.stop_loss_ratio)
+            lock_trigger = entry * (1.0 - self.lock_trigger_ratio)
             target = entry * (1.0 - self.take_profit_ratio)
         return AnchorTradePlan(
-            event,
-            direction,
-            anchor,
-            entry,
-            stop,
-            target,
-            rule,
-            detected_index,
-            trend_score,
+            event=event,
+            direction=resolved.direction,
+            entry_anchor=resolved.entry_anchor,
+            entry_price=entry,
+            stop_price=stop,
+            target_price=target,
+            entry_rule=resolved.rule,
+            detected_index=detected_index,
+            trend_score=resolved.trend_score,
+            structure_anchor=resolved.structure_anchor,
+            entry_quality_score=resolved.entry_quality_score,
+            lock_trigger_price=lock_trigger,
+            locked_stop_price=lock_trigger,
         )
 
     def evaluate_plan(
@@ -155,92 +195,47 @@ class AnchorTradeOutcomeEvaluator:
         plan: AnchorTradePlan,
         bars: Sequence[Bar],
     ) -> AnchorTradeOutcome:
-        """Use later OHLC bars; same-bar dual touches resolve stop-first."""
+        """Use later OHLC bars and activate the profit lock next-bar."""
 
-        for index in range(plan.entry_anchor.index + 1, len(bars)):
-            bar = bars[index]
-            stop_touch, target_touch = _barrier_touches(plan, bar)
-            if not stop_touch and not target_touch:
-                continue
-            stopped = stop_touch
-            status: OutcomeStatus = "stop_loss" if stopped else "take_profit"
-            exit_price = plan.stop_price if stopped else plan.target_price
-            return AnchorTradeOutcome(
-                plan,
-                status,
-                index,
-                bar.timestamp,
-                exit_price,
-                index - plan.entry_anchor.index,
-                stop_touch and target_touch,
-                self._net_return(plan, exit_price),
+        lock_trigger = plan.lock_trigger_price
+        locked_stop = plan.locked_stop_price
+        if lock_trigger is None:
+            multiplier = (
+                1.0 + self.lock_trigger_ratio
+                if plan.direction == "bullish"
+                else 1.0 - self.lock_trigger_ratio
             )
-        return AnchorTradeOutcome(plan, "unresolved")
-
-    def _entry_definition(
-        self,
-        event: PatternScanEvent,
-        bars: Sequence[Bar],
-    ) -> tuple[
-        TradeDirection | None,
-        PatternAnchor | None,
-        str | None,
-        float | None,
-    ]:
-        group = event.anchor_groups[0] if event.anchor_groups else event.anchors
-        definitions: dict[str, tuple[TradeDirection, int, str]] = {
-            "PATTERN_003": ("bullish", 2, "third trendline-support anchor"),
-            "PATTERN_004": ("bullish", 1, "second horizontal-support anchor"),
-            "PATTERN_005": ("bearish", 2, "third trendline-resistance anchor"),
-            "PATTERN_006": ("bearish", 1, "second horizontal-resistance anchor"),
-            "PATTERN_007": ("bullish", 2, "right-shoulder anchor"),
-            "PATTERN_008": ("bearish", 2, "right-shoulder anchor"),
-        }
-        defined = definitions.get(event.pattern_id)
-        if defined is not None:
-            direction, position, rule = defined
-            ordered = sorted(group, key=lambda anchor: anchor.index)
-            anchor = ordered[position] if len(ordered) > position else None
-            return direction, anchor, rule, None
-        if event.pattern_id == "PATTERN_002":
-            return self._triangle_entry(event, bars)
-        return None, None, None, None
-
-    @staticmethod
-    def _triangle_entry(
-        event: PatternScanEvent,
-        bars: Sequence[Bar],
-    ) -> tuple[
-        TradeDirection | None,
-        PatternAnchor | None,
-        str | None,
-        float | None,
-    ]:
-        if len(event.anchor_groups) < 2:
-            return None, None, None, None
-        upper = sorted(event.anchor_groups[0], key=lambda anchor: anchor.index)
-        lower = sorted(event.anchor_groups[1], key=lambda anchor: anchor.index)
-        first_anchor = min(anchor.index for anchor in (*upper, *lower))
-        features = ContextFeatureExtractor().extract(bars[: first_anchor + 1])
-        up_score, _, uptrend = directional_structure_score(features, bullish=True)
-        down_score, _, downtrend = directional_structure_score(
-            features, bullish=False
+            lock_trigger = plan.entry_price * multiplier
+        if locked_stop is None:
+            locked_stop = lock_trigger
+        resolution = resolve_standard_exit(
+            direction=plan.direction,
+            stop_price=plan.stop_price,
+            lock_trigger_price=lock_trigger,
+            locked_stop_price=locked_stop,
+            target_price=plan.target_price,
+            bars=bars,
+            entry_index=plan.entry_anchor.index,
         )
-        candidates: list[
-            tuple[float, TradeDirection, PatternAnchor, str]
-        ] = []
-        if uptrend and len(lower) >= 3:
-            candidates.append(
-                (up_score, "bullish", lower[2], "uptrend lower-boundary P3")
-            )
-        if downtrend and len(upper) >= 3:
-            candidates.append(
-                (down_score, "bearish", upper[2], "downtrend upper-boundary P3")
-            )
-        if not candidates:
-            return None, None, None, None
-        score, direction, anchor, rule = max(candidates, key=lambda item: item[0])
-        return direction, anchor, rule, score
+        index = resolution.index
+        exit_price = resolution.price
+        return AnchorTradeOutcome(
+            plan=plan,
+            status=resolution.status,
+            exit_index=index,
+            exit_timestamp=bars[index].timestamp if index is not None else None,
+            exit_price=exit_price,
+            bars_held=(
+                index - plan.entry_anchor.index if index is not None else None
+            ),
+            simultaneous_touch=resolution.simultaneous_touch,
+            net_return=(
+                self._net_return(plan, exit_price)
+                if exit_price is not None
+                else None
+            ),
+            lock_timestamp=resolution.lock_timestamp,
+        )
 
     def _net_return(self, plan: AnchorTradePlan, exit_price: float) -> float:
         gross = (
@@ -248,8 +243,12 @@ class AnchorTradeOutcomeEvaluator:
             if plan.direction == "bullish"
             else (plan.entry_price - exit_price) / plan.entry_price
         )
-        per_side = self.costs.fee_rate_per_side + self.costs.slippage_rate_per_side
-        return gross - 2.0 * per_side - self.costs.funding_rate
+        execution_cost = (
+            self.costs.entry_fee_rate
+            + self.costs.exit_fee_rate
+            + 2.0 * self.costs.slippage_rate_per_side
+        )
+        return gross - execution_cost - self.costs.funding_rate
 
 
 def summarize_outcomes(
@@ -260,15 +259,10 @@ def summarize_outcomes(
     return AnchorTradeSummary(
         len(outcomes),
         sum(outcome.status == "take_profit" for outcome in outcomes),
+        sum(outcome.status == "protected_profit" for outcome in outcomes),
         sum(outcome.status == "stop_loss" for outcome in outcomes),
         sum(outcome.status == "unresolved" for outcome in outcomes),
     )
-
-
-def _barrier_touches(plan: AnchorTradePlan, bar: Bar) -> tuple[bool, bool]:
-    if plan.direction == "bullish":
-        return bar.low <= plan.stop_price, bar.high >= plan.target_price
-    return bar.high >= plan.stop_price, bar.low <= plan.target_price
 
 
 def _timestamp_index(bars: Sequence[Bar], timestamp: int | str) -> int:

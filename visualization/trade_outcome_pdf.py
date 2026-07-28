@@ -18,6 +18,7 @@ from matplotlib.lines import Line2D
 from backtest.trade_outcome_labels import AnchorTrade, timestamp_to_utc_plus_8
 from core.models import Bar
 from data.candles import timeframe_to_milliseconds
+from features.trade_feasibility import TransactionCostModel
 from visualization.pattern_pdf import _draw_candles
 from visualization.trade_annotations import draw_page_trades, write_trade_ledger
 
@@ -33,7 +34,9 @@ def write_trade_outcome_pdf(
     *,
     candles_per_page: int = 168,
     stop_loss_ratio: float = 0.015,
-    take_profit_ratio: float = 0.015,
+    lock_trigger_ratio: float = 0.015,
+    take_profit_ratio: float = 0.03,
+    costs: TransactionCostModel | None = None,
 ) -> Path:
     """Write a summary plus adjacent, non-overlapping candlestick pages."""
 
@@ -43,6 +46,9 @@ def write_trade_outcome_pdf(
         raise ValueError("stop_loss_ratio must be between zero and one")
     if not 0.0 < take_profit_ratio < 1.0:
         raise ValueError("take_profit_ratio must be between zero and one")
+    if not 0.0 < lock_trigger_ratio < take_profit_ratio:
+        raise ValueError("lock_trigger_ratio must be below take_profit_ratio")
+    cost_model = costs or TransactionCostModel()
     _validate_continuous_bars(bars)
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -62,7 +68,9 @@ def write_trade_outcome_pdf(
             page_count,
             candles_per_page,
             stop_loss_ratio,
+            lock_trigger_ratio,
             take_profit_ratio,
+            cost_model,
         )
         for page_number, start in enumerate(
             range(0, len(bars), candles_per_page), start=1
@@ -88,7 +96,9 @@ def _write_summary(
     page_count: int,
     candles_per_page: int,
     stop_loss_ratio: float,
+    lock_trigger_ratio: float,
     take_profit_ratio: float,
+    costs: TransactionCostModel,
 ) -> None:
     figure, axis = plt.subplots(figsize=(11.69, 8.27))
     axis.axis("off")
@@ -102,10 +112,12 @@ def _write_summary(
         f"{_format_time(bars[-1].timestamp)}",
         f"Candles: {len(bars)} | Chart pages: {page_count} | "
         f"{candles_per_page} candles ({page_hours:g} hours) per full page",
-        f"Trades: {len(trades)} | TP: {outcomes['take_profit']} | "
+        f"Trades: {len(trades)} | TP 3%: {outcomes['take_profit']} | "
+        f"Locked 1.5%: {outcomes['protected_profit']} | "
         f"SL: {outcomes['stop_loss']} | Unresolved: {outcomes['unresolved']}",
         f"Long: {directions['bullish']} | Short: {directions['bearish']}",
-        f"Barrier config: SL {stop_loss_ratio:.2%} | TP {take_profit_ratio:.2%} | "
+        f"Exit config: SL {stop_loss_ratio:.2%} | Lock {lock_trigger_ratio:.2%} | "
+        f"TP {take_profit_ratio:.2%} | "
         f"Gross R:R {take_profit_ratio / stop_loss_ratio:.2f}",
         "",
         "Action convention",
@@ -113,6 +125,7 @@ def _write_summary(
         "  Short: SELL at entry, BUYBACK at exit",
         "  Green triangle = buy/buyback; red triangle = sell",
         "  Teal dashed line = take profit; orange dashed line = stop loss",
+        "  Purple dashed line = 1.5% protected-profit exit",
         "  Gray dotted line = unresolved position",
         "",
         "Continuity",
@@ -120,10 +133,13 @@ def _write_summary(
         "  final candle on one page is the first candle on the next page.",
         "",
         "Research limitation",
-        "  These are retrospective anchor labels from the supplied outcome report.",
-        "  They are not causal entry signals because each full pattern was confirmed",
-        "  after its anchor. Costs in the report: 0.05% fee and 0.02% slippage",
-        "  per side; funding 0.00%.",
+        "  Entries come from post-confirmation structure retest-and-reclaim rules.",
+        "  Profit lock activates from the candle after its trigger; OHLC ambiguity",
+        "  is resolved conservatively.",
+        f"  Costs: entry fee {costs.entry_fee_rate:.2%} | "
+        f"exit fee {costs.exit_fee_rate:.2%}",
+        f"  Slippage {costs.slippage_rate_per_side:.2%} per side | "
+        f"funding {costs.funding_rate:.2%}.",
     ]
     axis.text(
         0.06,
@@ -198,11 +214,12 @@ def _style_chart(
             Line2D([], [], marker="v", color="none", markerfacecolor="#d32f2f",
                    markeredgecolor="white", markersize=8, label="SELL"),
             Line2D([], [], color="#00897b", linestyle="--", label="TP trade"),
+            Line2D([], [], color="#5e35b1", linestyle="--", label="Locked profit"),
             Line2D([], [], color="#ef6c00", linestyle="--", label="SL trade"),
             Line2D([], [], color="#78909c", linestyle=":", label="Unresolved"),
         ],
         loc="upper left",
-        ncol=5,
+        ncol=6,
         fontsize=7,
         framealpha=0.85,
     )

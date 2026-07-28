@@ -36,9 +36,7 @@ def draw_page_trades(
             _draw_action(axis, bars, trade, trade.entry_time, trade.entry, action, offsets)
         if trade.exit_time is not None and first_time <= trade.exit_time <= last_time:
             action = "SELL" if trade.direction == "bullish" else "BUYBACK"
-            exit_price = (
-                trade.target if trade.outcome == "take_profit" else trade.stop
-            )
+            exit_price = trade.exit_price or _fallback_exit_price(trade)
             _draw_action(
                 axis,
                 bars,
@@ -101,13 +99,7 @@ def _draw_trade_path(
         return
     clipped_start = max(trade.entry_time, first_time)
     clipped_end = min(path_end, last_time)
-    end_price = (
-        trade.target
-        if trade.outcome == "take_profit"
-        else trade.stop
-        if trade.outcome == "stop_loss"
-        else trade.entry
-    )
+    end_price = trade.exit_price or _fallback_exit_price(trade)
     duration = max((path_end - trade.entry_time).total_seconds(), 1.0)
 
     def interpolated(moment: datetime) -> float:
@@ -116,9 +108,10 @@ def _draw_trade_path(
 
     color = {
         "take_profit": "#00897b",
+        "protected_profit": "#5e35b1",
         "stop_loss": "#ef6c00",
         "unresolved": "#78909c",
-    }[trade.outcome]
+    }.get(trade.outcome, "#78909c")
     axis.plot(
         [_hour_index(clipped_start, first_time), _hour_index(clipped_end, first_time)],
         [interpolated(clipped_start), interpolated(clipped_end)],
@@ -181,3 +174,13 @@ def _hour_index(moment: datetime, first_time: datetime) -> float:
 
 def _format_short_time(moment: datetime) -> str:
     return moment.strftime("%m-%d %H:%M UTC+8")
+
+
+def _fallback_exit_price(trade: AnchorTrade) -> float:
+    if trade.outcome == "take_profit":
+        return trade.target
+    if trade.outcome == "protected_profit":
+        return trade.locked_stop or trade.entry
+    if trade.outcome == "stop_loss":
+        return trade.stop
+    return trade.entry

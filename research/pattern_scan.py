@@ -6,6 +6,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Iterable, Sequence
 
 from core.models import Bar, PatternResult
+from core.pattern_policy import (
+    is_pattern_analysis_enabled,
+    is_trade_event_enabled,
+)
 from core.timeframes import MIN_STRUCTURE_SPAN_BARS, TRADING_TIMEFRAMES
 from data.candles import Candle, timeframe_to_milliseconds
 from factors.priority_combinations import PriorityCombinationScorer
@@ -14,7 +18,6 @@ from patterns import (
     HorizontalResistance,
     HorizontalSupport,
     InverseHeadShoulders,
-    ThreePointTrendlineResistance,
     ThreePointTrendlineSupport,
     Triangle,
 )
@@ -36,13 +39,12 @@ UTC_PLUS_8 = timezone(timedelta(hours=8))
 
 
 def scan_patterns() -> tuple[object, ...]:
-    """Return PATTERN_002 through PATTERN_008, explicitly excluding 001."""
+    """Return Pattern rules enabled for trading/report scans."""
 
     return (
         Triangle(),
         ThreePointTrendlineSupport(),
         HorizontalSupport(),
-        ThreePointTrendlineResistance(),
         HorizontalResistance(),
         InverseHeadShoulders(),
         HeadAndShouldersTop(),
@@ -59,7 +61,7 @@ class HistoricalPatternScanner:
             "low_2": PatternDetector((ThreePointTrendlineSupport(),)),
             "low_5": PatternDetector((HorizontalSupport(), InverseHeadShoulders())),
             "high_2": PatternDetector(
-                (ThreePointTrendlineResistance(), HorizontalResistance())
+                (HorizontalResistance(),)
             ),
             "high_5": PatternDetector((HeadAndShouldersTop(),)),
         }
@@ -83,8 +85,17 @@ class HistoricalPatternScanner:
         for as_of_index in range(MIN_STRUCTURE_SPAN_BARS, len(bars)):
             results = self._poll_at(bars, timeframe, as_of_index, schedules)
             for polled in results:
+                if not is_pattern_analysis_enabled(polled.pattern.pattern_id):
+                    continue
                 event = _to_event(symbol, bars, polled)
-                if event is None or event.identity in seen:
+                if (
+                    event is None
+                    or not is_trade_event_enabled(
+                        event.pattern_id,
+                        event.priority_combination_id,
+                    )
+                    or event.identity in seen
+                ):
                     continue
                 seen.add(event.identity)
                 events.append(event)

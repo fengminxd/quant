@@ -308,9 +308,10 @@ unrelated high-scoring historical patterns cannot be combined.
 +0.40*trendline_continuation_quality
 ```
 
-If either index relationship fails, the factor returns zero. The ZECUSDT 1h
-reference chain scores 91.7757 from component scores 90.8737, 88.1377, and
-95.1807. Output remains a score only.
+If either index relationship fails, the factor returns zero. The former
+ZECUSDT 1h reference chain is now invalid because its PATTERN_007 shorter-to-
+longer leg-span ratio is approximately 0.6296, below 2/3. Output remains a
+score only.
 
 ## Validation
 
@@ -331,10 +332,13 @@ evidence of selling exhaustion than a noisy three-low sequence.
 ## Inputs
 
 -   span
+-   leg_span_difference
+-   leg_span_ratio
 -   shoulder_price_error_atr
 -   head_depth_atr
 -   head_extreme_error_atr
 -   duration_asymmetry
+-   neckline_price_error_atr
 -   prior_decline_atr
 -   breakout_confirmed
 -   breakout_distance_atr
@@ -432,6 +436,9 @@ is stronger evidence that buyers repeatedly defend progressively higher prices.
 -   line_slope
 -   body_violation_count
 
+Upstream Pattern gate: `normalized_trend_strength = slope_log / atr_pct`
+must be less than or equal to 0.16. This gate does not change factor weights.
+
 ## Formula
 
 ``` text
@@ -504,8 +511,9 @@ net_reward = gross_reward - entry_cost - target_exit_cost - funding_cost
 net_reward_risk = net_reward / net_risk
 ```
 
-Default cost assumptions are configurable: 0.05% fee per side, 0.02% slippage
-per side, and zero funding until a holding-period estimate is supplied.
+Default cost assumptions are configurable: 0.02% entry fee, 0.05% exit fee,
+0.02% slippage per side, and zero funding until a holding-period estimate is
+supplied.
 
 ## Score
 
@@ -527,6 +535,44 @@ head-and-shoulders rules. The factor never emits Buy/Sell.
 -   Replay ambiguous stop/target bars on a lower timeframe
 -   Fee, slippage, funding, and stop-gap sensitivity
 -   MFE, MAE, time-to-target, Sharpe, Sortino, and maximum drawdown
+
+------------------------------------------------------------------------
+
+# FACTOR_008A EntryQualityScore
+
+## Market Logic
+
+A detected structure is not automatically a good execution price. Waiting for
+price to revisit the defended structure and close back on the intended side
+tests whether buyers or sellers still accept that level while avoiding entries
+made after price has already expanded away from it.
+
+## Features and Score
+
+-   structure_retest
+-   structure_reclaimed
+-   entry_distance_atr
+-   bars_since_detection
+
+``` text
+score =
+  0.40 * proximity
+  + 0.25 * retest
+  + 0.20 * reclaim
+  + 0.15 * freshness
+```
+
+The hard gate additionally requires the configured zone, distance, and expiry
+limits. It works best when a visible structure remains defended; it degrades in
+gap moves, one-way breakouts, and regimes where ATR understates jump risk.
+The factor is score-only and never directly returns Buy or Sell.
+
+## Validation
+
+-   Walk-forward and rolling OOS by Pattern, timeframe, and trend regime
+-   IC/RankIC against forward MFE, MAE, and net return
+-   Zone-width, expiry, fee, slippage, and funding sensitivity
+-   Monte Carlo trade-order and clustered-loss resampling
 
 ------------------------------------------------------------------------
 

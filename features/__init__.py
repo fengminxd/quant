@@ -10,6 +10,7 @@ from features.basic import (
     fit_error,
     higher_low_score,
     line_span,
+    normalized_log_trend_features,
     resistance_flatness,
     RegressionLine,
     trend_angle,
@@ -19,6 +20,7 @@ from features.basic import (
     volume_ratio,
 )
 from features.context import ContextFeatureExtractor
+from features.entry_retest import EntryRetestAssessment, EntryRetestFeatureExtractor
 from features.ema_rejection import (
     upper_ema_wick_rejection_at_close,
     upper_ema_wick_rejection_indexes,
@@ -40,6 +42,7 @@ __all__ = [
     "fit_error",
     "higher_low_score",
     "line_span",
+    "normalized_log_trend_features",
     "resistance_flatness",
     "RegressionLine",
     "trend_angle",
@@ -48,6 +51,8 @@ __all__ = [
     "volume_contraction",
     "volume_ratio",
     "ContextFeatureExtractor",
+    "EntryRetestAssessment",
+    "EntryRetestFeatureExtractor",
     "PatternTradePlan",
     "PatternTradePlanExtractor",
     "PriorityCombinationFeatureExtractor",

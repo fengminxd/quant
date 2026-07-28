@@ -10,6 +10,7 @@ from pathlib import Path
 from backtest.anchor_outcomes import AnchorTradeOutcomeEvaluator
 from data.market_config import load_market_data_config, load_supabase_config
 from data.supabase_store import SupabaseCandleStore
+from features.trade_feasibility import TransactionCostModel
 from research.anchor_trade_report import write_anchor_trade_report
 from research.pattern_dedup import select_temporally_distinct_events
 from research.pattern_scan import (
@@ -32,7 +33,10 @@ async def run_anchor_trade_stats(
     page_size: int = 1000,
     nearby_hours: float = 24.0,
     stop_loss_ratio: float = 0.015,
-    take_profit_ratio: float = 0.015,
+    lock_trigger_ratio: float = 0.015,
+    take_profit_ratio: float = 0.03,
+    entry_fee_rate: float = 0.0002,
+    exit_fee_rate: float = 0.0005,
 ) -> Path:
     """Scan the same cohort as the PDF and write only its outcome text."""
 
@@ -53,7 +57,12 @@ async def run_anchor_trade_stats(
         output_path,
         source_pdf=source_pdf,
         evaluator=AnchorTradeOutcomeEvaluator(
+            costs=TransactionCostModel(
+                entry_fee_rate=entry_fee_rate,
+                exit_fee_rate=exit_fee_rate,
+            ),
             stop_loss_ratio=stop_loss_ratio,
+            lock_trigger_ratio=lock_trigger_ratio,
             take_profit_ratio=take_profit_ratio,
         ),
     )
@@ -91,7 +100,22 @@ def main() -> None:
     parser.add_argument("--page-size", type=int, default=1000)
     parser.add_argument("--nearby-hours", type=float, default=24.0)
     parser.add_argument("--stop-loss-pct", type=float, default=1.5)
-    parser.add_argument("--take-profit-pct", type=float, default=1.5)
+    parser.add_argument("--lock-profit-pct", type=float, default=1.5)
+    parser.add_argument("--take-profit-pct", type=float, default=3.0)
+    parser.add_argument(
+        "--entry-fee-pct",
+        "--open-fee-pct",
+        dest="entry_fee_pct",
+        type=float,
+        default=0.02,
+    )
+    parser.add_argument(
+        "--exit-fee-pct",
+        "--close-fee-pct",
+        dest="exit_fee_pct",
+        type=float,
+        default=0.05,
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO,
@@ -108,7 +132,10 @@ def main() -> None:
             page_size=args.page_size,
             nearby_hours=args.nearby_hours,
             stop_loss_ratio=args.stop_loss_pct / 100.0,
+            lock_trigger_ratio=args.lock_profit_pct / 100.0,
             take_profit_ratio=args.take_profit_pct / 100.0,
+            entry_fee_rate=args.entry_fee_pct / 100.0,
+            exit_fee_rate=args.exit_fee_pct / 100.0,
         )
     )
 

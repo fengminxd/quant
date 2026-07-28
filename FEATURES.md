@@ -9,6 +9,9 @@ Reusable quantitative features shared by all patterns.
   Feature               Description              Formula Idea
   --------------------- ------------------------ -------------------------
   trend_angle           Trend slope              Linear regression slope
+  slope_log             Scale-free anchor slope  OLS(log(anchor low), bar index)
+  atr_pct               Causal relative range    ATR14 at P3 / P3 close
+  normalized_trend_strength Log slope / volatility slope_log/atr_pct
   line_span             Trendline length         bars(P1,Pn)
   touch_count           Trendline touches        Count of valid touches
   fit_error             Line fitting error       Mean distance to line
@@ -41,6 +44,10 @@ Reusable quantitative features shared by all patterns.
   upper_ema_rejection  Reusable supply rejection      high>EMA99>body_top/close
   triangle_span        Owning-cycle geometry           max(anchor)-min(anchor)
   structural_trade_plan Post-pattern execution geometry entry/stop/price-action target
+  structure_retest     Entry-zone contact              candle range overlaps level ±0.25 ATR
+  structure_reclaim    Directional close acceptance    bullish close>=level; bearish close<=level
+  entry_distance_atr   Execution proximity             abs(close-structure level)/ATR
+  entry_wait_fresh     Setup validity                   bars since detection <= configured expiry
   gross_reward_risk    Unadjusted payoff geometry       reward distance/risk distance
   net_reward_risk      Executable payoff geometry       net reward/net risk after costs
   estimated_cost_r     Cost burden in risk units        execution and holding cost/gross risk

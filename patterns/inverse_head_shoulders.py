@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from itertools import combinations
 
 from core.base import Pattern
@@ -12,18 +11,13 @@ from factors.pattern_factors import InverseHeadShouldersScore
 from features.basic import line_value
 from indicators.atr import average_true_range
 from indicators.swing import Pivot, PivotDetector, SwingDetector
-
-
-@dataclass(frozen=True)
-class InverseHeadShouldersCandidate:
-    """Three confirmed swing lows and the two highs forming their neckline."""
-
-    lows: tuple[Pivot, Pivot, Pivot]
-    neckline: tuple[Pivot, Pivot]
-    atr: float
-    breakout_index: int | None
-    breakout_distance_atr: float
-    breakout_volume_ratio: float
+from patterns.inverse_head_shoulders_geometry import (
+    InverseHeadShouldersCandidate,
+    candidate_features,
+    candidate_rank,
+    select_neckline,
+    valid_leg_spans,
+)
 
 
 class InverseHeadShoulders(Pattern):
@@ -45,11 +39,20 @@ class InverseHeadShoulders(Pattern):
         max_shoulder_error_atr: float = 1.0,
         max_head_extreme_error_atr: float = 0.0,
         max_breakout_bars: int = 40,
+        min_leg_span_ratio: float | None = 2.0 / 3.0,
+        max_neckline_error_atr: float | None = 1.0,
     ) -> None:
         bar_counts = (min_span, min_leg_span, min_neckline_leg_span, max_breakout_bars)
         if any(value <= 0 for value in bar_counts):
             raise ValueError("bar-count parameters must be positive")
-        atr_limits = (min_head_depth_atr, max_shoulder_error_atr, max_head_extreme_error_atr)
+        if min_leg_span_ratio is not None and not 0 < min_leg_span_ratio <= 1:
+            raise ValueError("min_leg_span_ratio must be in (0, 1]")
+        atr_limits = (
+            min_head_depth_atr,
+            max_shoulder_error_atr,
+            max_head_extreme_error_atr,
+            *(() if max_neckline_error_atr is None else (max_neckline_error_atr,)),
+        )
         if any(value < 0 for value in atr_limits):
             raise ValueError("ATR thresholds must be non-negative")
         self.swing_detector = swing_detector or SwingDetector(
@@ -62,6 +65,8 @@ class InverseHeadShoulders(Pattern):
         self.max_shoulder_error_atr = max_shoulder_error_atr
         self.max_head_extreme_error_atr = max_head_extreme_error_atr
         self.max_breakout_bars = max_breakout_bars
+        self.min_leg_span_ratio = min_leg_span_ratio
+        self.max_neckline_error_atr = max_neckline_error_atr
         self.factor = InverseHeadShouldersScore()
 
     def detect(self, data: Sequence[Bar]) -> PatternResult:
@@ -70,7 +75,7 @@ class InverseHeadShoulders(Pattern):
         candidate, candidate_count = self._best_candidate(data)
         if candidate is None:
             return PatternResult(self.pattern_id, self.name, False, 0.0)
-        features = self._features_for_candidate(data, candidate, candidate_count)
+        features = candidate_features(data, candidate, candidate_count)
         left, head, right = candidate.lows
         neck_left, neck_right = candidate.neckline
         breakout_confirmed = candidate.breakout_index is not None
@@ -105,6 +110,8 @@ class InverseHeadShoulders(Pattern):
                 "timestamp_semantics": "bar_open_time",
                 "timeframe": data[right.index].timeframe,
                 "min_span_bars": self.min_span,
+                "min_leg_span_ratio": self.min_leg_span_ratio,
+                "max_neckline_error_atr": self.max_neckline_error_atr,
                 "left_shoulder_index": left.index,
             },
         )
@@ -114,7 +121,7 @@ class InverseHeadShoulders(Pattern):
         candidate, candidate_count = self._best_candidate(data)
         if candidate is None:
             return {}
-        return self._features_for_candidate(data, candidate, candidate_count)
+        return candidate_features(data, candidate, candidate_count)
 
     def calculate_score(self, features: Mapping[str, FeatureResult]) -> float:
         """Map structure and confirmation features to a score only."""
@@ -131,7 +138,14 @@ class InverseHeadShoulders(Pattern):
         atr_values = average_true_range(data)
         candidates: list[InverseHeadShouldersCandidate] = []
         for left, head, right in combinations(lows, 3):
-            if not self._valid_spans(left, head, right):
+            if not valid_leg_spans(
+                left,
+                head,
+                right,
+                min_span=self.min_span,
+                min_leg_span=self.min_leg_span,
+                min_leg_span_ratio=self.min_leg_span_ratio,
+            ):
                 continue
             prior_left = data[max(0, left.index - self.min_span) : left.index + 1]
             if left.price != min(bar.low for bar in prior_left):
@@ -144,7 +158,15 @@ class InverseHeadShoulders(Pattern):
             extreme = min(bar.low for bar in data[left.index : right.index + 1])
             if head.price - extreme > self.max_head_extreme_error_atr * atr:
                 continue
-            neckline = self._neckline(highs, left, head, right)
+            neckline = select_neckline(
+                highs,
+                left,
+                head,
+                right,
+                min_leg_span=self.min_neckline_leg_span,
+                atr=atr,
+                max_price_error_atr=self.max_neckline_error_atr,
+            )
             if neckline is None:
                 continue
             right_pullback = data[neckline[1].index + 1 : right.index + 1]
@@ -165,36 +187,7 @@ class InverseHeadShoulders(Pattern):
             )
         if not candidates:
             return None, 0
-        return max(candidates, key=self._rank), len(candidates)
-
-    def _valid_spans(self, left: Pivot, head: Pivot, right: Pivot) -> bool:
-        return (
-            right.index - left.index >= self.min_span
-            and head.index - left.index >= self.min_leg_span
-            and right.index - head.index >= self.min_leg_span
-        )
-
-    def _neckline(
-        self,
-        highs: Sequence[Pivot], left: Pivot, head: Pivot, right: Pivot
-    ) -> tuple[Pivot, Pivot] | None:
-        left_highs = [
-            point
-            for point in highs
-            if point.index - left.index >= self.min_neckline_leg_span
-            and head.index - point.index >= self.min_neckline_leg_span
-        ]
-        right_highs = [
-            point
-            for point in highs
-            if point.index - head.index >= self.min_neckline_leg_span
-            and right.index - point.index >= self.min_neckline_leg_span
-        ]
-        if not left_highs or not right_highs:
-            return None
-        return max(left_highs, key=lambda point: point.price), max(
-            right_highs, key=lambda point: point.price
-        )
+        return max(candidates, key=candidate_rank), len(candidates)
 
     def _breakout(
         self,
@@ -220,80 +213,3 @@ class InverseHeadShoulders(Pattern):
             volume_ratio = data[index].volume / average_volume if average_volume > 0 else 0.0
             return index, distance, volume_ratio
         return None, 0.0, 0.0
-
-    def _features_for_candidate(
-        self,
-        data: Sequence[Bar],
-        candidate: InverseHeadShouldersCandidate,
-        candidate_count: int,
-    ) -> Mapping[str, FeatureResult]:
-        left, head, right = candidate.lows
-        neck_left, neck_right = candidate.neckline
-        left_leg = head.index - left.index
-        right_leg = right.index - head.index
-        span = right.index - left.index
-        prior = data[max(0, left.index - 20) : left.index]
-        prior_decline = max((bar.high for bar in prior), default=left.price) - left.price
-        return {
-            "span": FeatureResult("span", float(span), 1.0),
-            "left_leg_span": FeatureResult("left_leg_span", float(left_leg), 1.0),
-            "right_leg_span": FeatureResult("right_leg_span", float(right_leg), 1.0),
-            "shoulder_price_error_atr": FeatureResult(
-                "shoulder_price_error_atr",
-                abs(left.price - right.price) / candidate.atr,
-                1.0,
-            ),
-            "head_depth_atr": FeatureResult(
-                "head_depth_atr",
-                (min(left.price, right.price) - head.price) / candidate.atr,
-                1.0,
-            ),
-            "head_extreme_error_atr": FeatureResult(
-                "head_extreme_error_atr",
-                (head.price - min(bar.low for bar in data[left.index : right.index + 1]))
-                / candidate.atr,
-                1.0,
-            ),
-            "duration_asymmetry": FeatureResult(
-                "duration_asymmetry", abs(left_leg - right_leg) / span, 1.0
-            ),
-            "neckline_slope_atr_per_bar": FeatureResult(
-                "neckline_slope_atr_per_bar",
-                (neck_right.price - neck_left.price)
-                / (neck_right.index - neck_left.index)
-                / candidate.atr,
-                1.0,
-            ),
-            "prior_decline_atr": FeatureResult(
-                "prior_decline_atr", prior_decline / candidate.atr, 1.0 if prior else 0.0
-            ),
-            "breakout_confirmed": FeatureResult(
-                "breakout_confirmed", 1.0 if candidate.breakout_index is not None else 0.0, 1.0
-            ),
-            "breakout_distance_atr": FeatureResult(
-                "breakout_distance_atr", candidate.breakout_distance_atr, 1.0
-            ),
-            "breakout_volume_ratio": FeatureResult(
-                "breakout_volume_ratio", candidate.breakout_volume_ratio, 1.0
-            ),
-            "confirmation_lag": FeatureResult(
-                "confirmation_lag", float(right.confirmed_at - right.index), 1.0
-            ),
-            "valid_candidate_count": FeatureResult(
-                "valid_candidate_count", float(candidate_count), 1.0
-            ),
-        }
-
-    @staticmethod
-    def _rank(candidate: InverseHeadShouldersCandidate) -> tuple[float, ...]:
-        left, head, right = candidate.lows
-        span = right.index - left.index
-        duration_asymmetry = abs((head.index - left.index) - (right.index - head.index)) / span
-        return (
-            1.0 if candidate.breakout_index is not None else 0.0,
-            -abs(left.price - right.price) / candidate.atr,
-            -duration_asymmetry,
-            (min(left.price, right.price) - head.price) / candidate.atr,
-            float(span),
-            float(right.index),
-        )

@@ -3,21 +3,30 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from core.models import Bar
+from features.basic import normalized_log_trend_features
+from indicators.swing import Pivot
 from patterns import ThreePointTrendlineSupport
 
 
-def hype_support_bars() -> list[Bar]:
-    """Build the reported HYPE 15m support with Binance OHLC anchor values."""
+def hype_support_bars(*, historical_middle_low: bool = False) -> list[Bar]:
+    """Build HYPE-derived bars with an exact or historical P2 contact."""
 
     timeframe = timedelta(minutes=15)
     first_index, second_index, third_index = 2, 37, 92
     first_time = datetime(2026, 7, 14, 3, 15, tzinfo=timezone.utc)
     origin = first_time - first_index * timeframe
-    anchor_lows = {
+    anchor_lows: dict[int, float] = {
         first_index: 62.555,
-        second_index: 63.588,
         third_index: 64.863,
     }
+    anchor_lows[second_index] = (
+        63.588
+        if historical_middle_low
+        else anchor_lows[first_index]
+        + (anchor_lows[third_index] - anchor_lows[first_index])
+        * (second_index - first_index)
+        / (third_index - first_index)
+    )
     slope = (anchor_lows[third_index] - anchor_lows[first_index]) / (
         third_index - first_index
     )
@@ -50,13 +59,13 @@ def hype_support_bars() -> list[Bar]:
     return bars
 
 
-def test_hype_three_lower_shadows_form_support() -> None:
+def test_three_real_lower_shadow_contacts_form_support() -> None:
     result = ThreePointTrendlineSupport().detect(hype_support_bars())
 
     assert result.detected is True
     assert result.geometry["points"] == [
         (2, 62.555),
-        (37, 63.588),
+        (37, 63.452555555555556),
         (92, 64.863),
     ]
     assert result.geometry["point_timestamps"] == [
@@ -72,6 +81,14 @@ def test_hype_three_lower_shadows_form_support() -> None:
     assert result.metadata["timestamp_semantics"] == "bar_open_time"
 
 
+def test_historical_hype_p2_without_real_shadow_contact_is_rejected() -> None:
+    result = ThreePointTrendlineSupport().detect(
+        hype_support_bars(historical_middle_low=True)
+    )
+
+    assert result.detected is False
+
+
 def test_third_hype_anchor_requires_right_side_confirmation() -> None:
     bars = hype_support_bars()
     third_index = 92
@@ -80,12 +97,83 @@ def test_third_hype_anchor_requires_right_side_confirmation() -> None:
     assert ThreePointTrendlineSupport().detect(bars[: third_index + 3]).detected is True
 
 
+def test_raw_coordinate_angle_is_not_a_pattern_gate() -> None:
+    bars = [
+        Bar(
+            bar.timestamp,
+            bar.open * 100.0,
+            bar.high * 100.0,
+            bar.low * 100.0,
+            bar.close * 100.0,
+            bar.volume,
+            bar.timeframe,
+        )
+        for bar in hype_support_bars()
+    ]
+
+    result = ThreePointTrendlineSupport().detect(bars)
+
+    assert result.detected is True
+    assert result.features["line_angle"].value > 50.0
+    assert result.features["normalized_trend_strength"].value < 0.16
+
+
+def test_normalized_trend_strength_must_not_exceed_point_sixteen() -> None:
+    base = hype_support_bars()
+
+    def shifted(drift: float) -> list[Bar]:
+        return [
+            Bar(
+                bar.timestamp,
+                bar.open + drift * index,
+                bar.high + drift * index,
+                bar.low + drift * index,
+                bar.close + drift * index,
+                bar.volume,
+                bar.timeframe,
+            )
+            for index, bar in enumerate(base)
+        ]
+
+    accepted = shifted(0.051)
+    rejected = shifted(0.052)
+    accepted_result = ThreePointTrendlineSupport().detect(accepted)
+    points = tuple(
+        Pivot(index, index, rejected[index].low, "low")
+        for index in (2, 37, 92)
+    )
+    rejected_strength = normalized_log_trend_features(
+        rejected, points
+    )["normalized_trend_strength"].value
+
+    assert accepted_result.detected is True
+    assert accepted_result.features["normalized_trend_strength"].value < 0.16
+    assert rejected_strength > 0.16
+    assert ThreePointTrendlineSupport().detect(rejected).detected is False
+
+
 def test_anchor_may_touch_open_but_not_body_interior() -> None:
     bar = Bar(0, open=10.0, high=12.0, low=9.0, close=11.0, volume=1000.0)
 
-    assert ThreePointTrendlineSupport._anchor_contact_is_valid(bar, 9.5, 0.5) is True
-    assert ThreePointTrendlineSupport._anchor_contact_is_valid(bar, 10.0, 0.5) is True
-    assert ThreePointTrendlineSupport._anchor_contact_is_valid(bar, 10.2, 0.5) is False
+    assert ThreePointTrendlineSupport._anchor_contact_is_valid(bar, 8.9) is False
+    assert ThreePointTrendlineSupport._anchor_contact_is_valid(bar, 9.5) is True
+    assert ThreePointTrendlineSupport._anchor_contact_is_valid(bar, 10.0) is True
+    assert ThreePointTrendlineSupport._anchor_contact_is_valid(bar, 10.2) is False
+
+
+def test_eth_p2_line_below_candle_low_is_not_a_contact() -> None:
+    p2 = Bar(
+        0,
+        open=1780.0,
+        high=1788.87,
+        low=1777.61,
+        close=1785.11,
+        volume=1000.0,
+    )
+
+    assert ThreePointTrendlineSupport._anchor_contact_is_valid(
+        p2, 1774.204915254237
+    ) is False
 
 
 def test_supplied_anchor_can_map_to_adjacent_confirmed_swing_zone() -> None:

@@ -19,14 +19,27 @@ specified body price only.
 | FIXED_COMBO_001 | PATTERN_004 `double_swing_low` | Second anchor close above EMA99 |
 | FIXED_COMBO_002 | PATTERN_006 | Second anchor open below EMA99 |
 | FIXED_COMBO_003 | PATTERN_007 | Head close above EMA99; head forms prior double-bottom support |
-| FIXED_COMBO_004 | PATTERN_008 | Head open below EMA99; head forms prior horizontal resistance |
-| FIXED_COMBO_005 | PATTERN_003 | First anchor forms prior double bottom; all three anchor closes above EMA99; third anchor forms breakout-retest support |
-| FIXED_COMBO_006 | PATTERN_005 | First anchor forms prior horizontal resistance; third anchor open below EMA99 |
+| FIXED_COMBO_004 (research-only) | PATTERN_008 (disabled) | Head open below EMA99; head forms prior horizontal resistance |
+| FIXED_COMBO_005 | PATTERN_003 | First anchor forms prior double bottom; P3 lower shadow touches EMA99 and P3 close is at or above EMA99; third anchor forms breakout-retest support |
+| FIXED_COMBO_006 (disabled) | PATTERN_005 | First anchor forms prior horizontal resistance; third anchor open below EMA99 |
 | FIXED_COMBO_007 | PATTERN_002 upper 2/lower 3 + frozen uptrend | Lower P1 forms prior double bottom; lower P3 close above EMA99 |
 | FIXED_COMBO_008 | PATTERN_002 upper 3/lower 2 + frozen downtrend | Upper P1 forms prior horizontal resistance; upper P3 open below EMA99 |
 
-For FIXED_COMBO_005, “three anchor closes” means all three low anchors must
-close above their respective causal EMA99 values.
+`FIXED_COMBO_006` is globally disabled. Its feature profile is retained only
+for compatibility, and even a direct factor-scoring call returns an inactive
+`combination_disabled` result.
+
+`FIXED_COMBO_004` feature scoring remains available for direct research, but
+its disabled PATTERN_008 parent cannot enter any trading or report cohort.
+
+For FIXED_COMBO_005, the P3 EMA reclaim requires
+`P3.low <= EMA99 <= min(P3.open, P3.close)` and `P3.close >= EMA99`.
+Equality is valid. EMA99 is causal and belongs to the Pattern timeframe.
+
+PATTERN_006 is not a standalone entry rule. Its horizontal-resistance logic is
+permitted only in FIXED_COMBO_002 (as the parent Pattern), FIXED_COMBO_004
+(head resistance evidence), and FIXED_COMBO_008 (upper-P1 resistance
+evidence).
 
 ## Historical-Level Semantics
 

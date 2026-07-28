@@ -5,8 +5,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from core.models import Bar
-from indicators.swing import PivotDetector, SwingDetector
+from indicators.swing import Pivot, PivotDetector, SwingDetector
 from patterns.inverse_head_shoulders import InverseHeadShoulders
+from patterns.inverse_head_shoulders_geometry import select_neckline
 
 
 def pattern_bars(
@@ -91,6 +92,9 @@ def test_rule_uses_same_bar_span_for_all_three_timeframes(timeframe: str) -> Non
     assert result.detected is True
     assert result.metadata["timeframe"] == timeframe
     assert result.features["span"].value == 50.0
+    assert result.features["leg_span_difference"].value == 0.0
+    assert result.features["leg_span_ratio"].value == 1.0
+    assert result.features["neckline_price_error_atr"].value <= 1.0
     assert result.features["breakout_confirmed"].value == 1.0
     assert 0.0 <= result.score <= 100.0
 
@@ -99,6 +103,60 @@ def test_rejects_span_below_40_bars() -> None:
     bars = pattern_bars(left_index=5, head_index=25, right_index=44)
 
     assert detector().detect(bars).detected is False
+
+
+def test_shorter_leg_exactly_two_thirds_of_longer_leg_is_allowed() -> None:
+    result = detector().detect(
+        pattern_bars(left_index=10, head_index=55, right_index=85)
+    )
+
+    assert result.detected is True
+    assert result.features["leg_span_difference"].value == 15.0
+    assert result.features["leg_span_ratio"].value == pytest.approx(2.0 / 3.0)
+
+
+def test_rejects_shorter_leg_below_two_thirds_of_longer_leg() -> None:
+    bars = pattern_bars(left_index=10, head_index=55, right_index=84)
+
+    assert detector().detect(bars).detected is False
+
+
+def test_neckline_selects_smallest_swing_high_price_difference() -> None:
+    left = Pivot(0, 1, 40.0, "low")
+    head = Pivot(20, 21, 30.0, "low")
+    right = Pivot(40, 41, 40.0, "low")
+    highs = [
+        Pivot(8, 9, 50.0, "high"),
+        Pivot(12, 13, 48.0, "high"),
+        Pivot(28, 29, 49.0, "high"),
+        Pivot(32, 33, 48.2, "high"),
+    ]
+
+    neckline = select_neckline(
+        highs,
+        left,
+        head,
+        right,
+        min_leg_span=5,
+        atr=2.0,
+        max_price_error_atr=1.0,
+    )
+
+    assert neckline == (highs[1], highs[3])
+
+
+def test_neckline_rejects_swing_high_difference_above_one_atr() -> None:
+    neckline = select_neckline(
+        [Pivot(10, 11, 50.0, "high"), Pivot(30, 31, 52.1, "high")],
+        Pivot(0, 1, 40.0, "low"),
+        Pivot(20, 21, 30.0, "low"),
+        Pivot(40, 41, 40.0, "low"),
+        min_leg_span=5,
+        atr=2.0,
+        max_price_error_atr=1.0,
+    )
+
+    assert neckline is None
 
 
 def test_rejects_head_that_is_not_below_both_shoulders() -> None:
@@ -123,7 +181,7 @@ def test_right_shoulder_requires_right_side_confirmation() -> None:
     assert confirmed.features["breakout_confirmed"].value == 0.0
 
 
-def test_zec_1h_regression_uses_supplied_utc_plus_8_anchors() -> None:
+def test_zec_1h_legacy_case_is_rejected_by_new_symmetry_gate() -> None:
     origin = datetime(2026, 6, 25, 3, tzinfo=timezone.utc)
     bars = pattern_bars(
         timeframe="1h",
@@ -138,36 +196,4 @@ def test_zec_1h_regression_uses_supplied_utc_plus_8_anchors() -> None:
 
     result = detector().detect(bars)
 
-    assert result.detected is True
-    assert result.metadata["state"] == "breakout_confirmed"
-    assert result.features["span"].value == 132.0
-    assert result.features["left_leg_span"].value == 81.0
-    assert result.features["right_leg_span"].value == 51.0
-    assert result.features["head_depth_atr"].value > 0.5
-    assert result.features["breakout_confirmed"].value == 1.0
-    assert result.score >= 75.0
-    assert result.geometry["point_timestamps"] == [
-        "2026-06-25 13:00",
-        "2026-06-28 22:00",
-        "2026-07-01 01:00",
-    ]
-    assert result.geometry["points"] == [
-        (10, 386.01),
-        (91, 367.77),
-        (142, 385.07),
-    ]
-    utc_plus_8 = [
-        (
-            datetime.strptime(value, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
-            + timedelta(hours=8)
-        ).strftime("%Y-%m-%d %H:%M")
-        for value in result.geometry["point_timestamps"]
-    ]
-    assert utc_plus_8 == [
-        "2026-06-25 21:00",
-        "2026-06-29 06:00",
-        "2026-07-01 09:00",
-    ]
-    neck_left, neck_right = result.geometry["neckline_points"]
-    assert 10 < neck_left[0] < 91 < neck_right[0] < 142
-    assert result.geometry["breakout_index"] > 142
+    assert result.detected is False

@@ -10,6 +10,7 @@ from core.base import Pattern
 from core.models import Bar, FeatureResult, PatternResult
 from factors.pattern_factors import ThreePointTrendlineSupportScore
 from features.basic import fit_error, line_span, line_value, trend_angle
+from features.basic import normalized_log_trend_features
 from indicators.atr import average_true_range
 from indicators.swing import Pivot, SwingDetector
 
@@ -27,6 +28,7 @@ class ThreePointTrendlineSupport(Pattern):
 
     pattern_id = "PATTERN_003"
     name = "Three Point Trendline Support"
+    max_normalized_trend_strength = 0.16
 
     def __init__(
         self,
@@ -39,9 +41,6 @@ class ThreePointTrendlineSupport(Pattern):
             raise ValueError("span constraints must be positive")
         if atr_tolerance_ratio < 0:
             raise ValueError("atr_tolerance_ratio must be non-negative")
-        # Candidate spacing belongs to the trendline geometry rules below.  It
-        # must not be reused as swing denoising, otherwise a valid pivot can be
-        # discarded simply because the opposite turn happened quickly.
         self.swing_detector = swing_detector or SwingDetector(min_bars=1)
         self.min_total_span = min_total_span
         self.min_leg_span = min_leg_span
@@ -78,8 +77,7 @@ class ThreePointTrendlineSupport(Pattern):
         if anchor_indexes[0] < 0 or anchor_indexes[-1] >= len(data):
             raise ValueError("anchor_indexes are outside supplied data")
         event_index = anchor_indexes[-1]
-        atr_values = average_true_range(data[: event_index + 1])
-        atr = atr_values[-1] if atr_values else 0.0
+        atr = average_true_range(data[: event_index + 1])[-1]
         tolerance = max(1e-9, atr * self.atr_tolerance_ratio)
         confirmed_lows = self.swing_detector.lows(data)
         resolved: list[Pivot] = []
@@ -194,8 +192,7 @@ class ThreePointTrendlineSupport(Pattern):
         lows = self.swing_detector.lows(data)
         if len(lows) < 3:
             return None
-        atr_values = average_true_range(data)
-        atr = atr_values[-1] if atr_values else 0.0
+        atr = average_true_range(data)[-1]
         tolerance = max(1e-9, atr * self.atr_tolerance_ratio)
         candidates: list[ThreePointSupportCandidate] = []
         for combo in combinations(lows, 3):
@@ -217,11 +214,15 @@ class ThreePointTrendlineSupport(Pattern):
         p1, p2, p3 = points
         if not self._passes_geometry(points):
             return False
+        if normalized_log_trend_features(data, points)[
+            "normalized_trend_strength"
+        ].value > self.max_normalized_trend_strength + 1e-12:
+            return False
         if abs(p2.price - line_value(p1, p3, p2.index)) > tolerance:
             return False
         valid_contacts = [
             self._anchor_contact_is_valid(
-                data[point.index], line_value(p1, p3, point.index), tolerance
+                data[point.index], line_value(p1, p3, point.index)
             )
             for point in points
         ]
@@ -240,6 +241,7 @@ class ThreePointTrendlineSupport(Pattern):
         slope = (p3.price - p1.price) / (p3.index - p1.index)
         error = fit_error(points).value
         return {
+            **normalized_log_trend_features(data, points),
             "touch_count": FeatureResult("touch_count", 3.0, 1.0),
             "line_span": line_span(points),
             "leg_1_span": FeatureResult(
@@ -273,9 +275,9 @@ class ThreePointTrendlineSupport(Pattern):
         )
 
     @staticmethod
-    def _anchor_contact_is_valid(bar: Bar, value: float, tolerance: float) -> bool:
+    def _anchor_contact_is_valid(bar: Bar, value: float) -> bool:
         body_low = min(bar.open, bar.close)
-        return bar.low - tolerance <= value <= body_low
+        return bar.low <= value <= body_low
 
     @staticmethod
     def _body_violation_count(data: Sequence[Bar], points: tuple[Pivot, Pivot, Pivot]) -> int:
@@ -295,5 +297,4 @@ class ThreePointTrendlineSupport(Pattern):
 
     @staticmethod
     def _rank(candidate: ThreePointSupportCandidate) -> tuple[float, float]:
-        points = candidate.points
-        return (line_span(points).value, -fit_error(points).value)
+        return (line_span(candidate.points).value, -fit_error(candidate.points).value)

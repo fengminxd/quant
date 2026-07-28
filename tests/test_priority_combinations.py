@@ -141,7 +141,8 @@ def test_three_point_support_combines_ema_and_breakout_retest_evidence() -> None
     result = PriorityCombinationScorer().score(pattern, bars, as_of_index=122)
 
     assert result.metadata["combination_id"] == "FIXED_COMBO_005"
-    assert "all_three_anchors_close_above_ema99" in result.metadata[
+    condition = "third_anchor_lower_shadow_touch_ema99_close_at_or_above"
+    assert condition in result.metadata[
         "matched_conditions"
     ]
     assert "third_anchor_breakout_retest_support" in result.metadata[
@@ -158,9 +159,37 @@ def test_three_point_support_combines_ema_and_breakout_retest_evidence() -> None
         ),
     )
     assert result.score == pytest.approx(66.6667)
+    evidence = result.metadata["condition_evidence"][condition]
+    assert evidence["lower_shadow_touched_ema99"] is True
+    assert evidence["close_at_or_above_ema99"] is True
 
 
-def test_three_point_resistance_can_match_both_fixed_conditions() -> None:
+def test_combo005_ema_condition_rejects_closes_above_without_p3_touch() -> None:
+    bars = flat_bars()
+    for index in (100, 110, 120):
+        replace_bar(
+            bars, index, open_=104.5, high=106.0, low=104.0, close=105.0
+        )
+    pattern = PatternResult(
+        "PATTERN_003",
+        "Three Point Trendline Support",
+        True,
+        80.0,
+        geometry={"points": [(100, 104.0), (110, 104.0), (120, 104.0)]},
+    )
+    condition = "third_anchor_lower_shadow_touch_ema99_close_at_or_above"
+
+    result = PriorityCombinationScorer().score(
+        pattern, bars, as_of_index=122
+    )
+
+    assert condition not in result.metadata["matched_conditions"]
+    evidence = result.metadata["condition_evidence"][condition]
+    assert evidence["lower_shadow_touched_ema99"] is False
+    assert evidence["close_at_or_above_ema99"] is True
+
+
+def test_fixed_combo_006_is_globally_disabled() -> None:
     bars = flat_bars("4h")
     for index in (60, 100):
         replace_bar(
@@ -177,18 +206,11 @@ def test_three_point_resistance_can_match_both_fixed_conditions() -> None:
 
     result = PriorityCombinationScorer().score(pattern, bars, as_of_index=122)
 
-    assert result.score == 100.0
+    assert result.score == 0.0
+    assert result.metadata["active"] is False
+    assert result.metadata["state"] == "combination_disabled"
     assert result.metadata["combination_id"] == "FIXED_COMBO_006"
-    assert result.metadata["matched_count"] == 2
-    assert result.metadata["level_relations"] == (
-        (
-            "first_anchor_horizontal_resistance",
-            "strict_two_swing_horizontal_resistance",
-            60,
-            100,
-            105.0,
-        ),
-    )
+    assert result.metadata["matched_conditions"] == ()
 
 
 def trend_bars(direction: int) -> list[Bar]:

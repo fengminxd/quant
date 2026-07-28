@@ -72,6 +72,39 @@ def trend_angle(points: Sequence[Pivot]) -> FeatureResult:
     return FeatureResult("line_angle", math.degrees(math.atan(slope)), 1.0)
 
 
+def normalized_log_trend_features(
+    data: Sequence[Bar],
+    points: Sequence[Pivot],
+    atr_period: int = 14,
+) -> dict[str, FeatureResult]:
+    """Return log-price slope normalized by causal ATR percentage at P3."""
+
+    if len(points) < 2:
+        raise ValueError("at least two pivots are required")
+    if any(point.price <= 0.0 for point in points):
+        raise ValueError("pivot prices must be positive")
+    p3 = points[-1]
+    if not 0 <= p3.index < len(data):
+        raise ValueError("last pivot is outside supplied data")
+    logged = [
+        Pivot(point.index, point.confirmed_at, math.log(point.price), point.kind)
+        for point in points
+    ]
+    slope_log = fit_regression_line(logged).slope
+    atr = average_true_range(data[: p3.index + 1], atr_period)[-1]
+    close = data[p3.index].close
+    atr_pct = atr / close if close > 0.0 else 0.0
+    confidence = 1.0 if atr_pct > 0.0 else 0.0
+    strength = slope_log / atr_pct if atr_pct > 0.0 else math.inf
+    return {
+        "slope_log": FeatureResult("slope_log", slope_log, confidence),
+        "atr_pct": FeatureResult("atr_pct", atr_pct, confidence),
+        "normalized_trend_strength": FeatureResult(
+            "normalized_trend_strength", strength, confidence
+        ),
+    }
+
+
 def line_span(points: Sequence[Pivot]) -> FeatureResult:
     """Number of bars covered by a line."""
 

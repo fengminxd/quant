@@ -39,6 +39,8 @@ class HeadAndShouldersTop(Pattern):
             max_shoulder_error_atr=max_shoulder_error_atr,
             max_head_extreme_error_atr=max_head_extreme_error_atr,
             max_breakout_bars=max_breakdown_bars,
+            min_leg_span_ratio=None,
+            max_neckline_error_atr=None,
         )
 
     def detect(self, data: Sequence[Bar]) -> PatternResult:
