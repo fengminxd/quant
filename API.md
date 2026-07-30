@@ -101,6 +101,16 @@ ThreePointTrendlineSupport.detect_at(data, anchor_index)-\>PatternResult
 
 ThreePointTrendlineSupport.detect_anchors(data, anchor_indexes)-\>PatternResult
 
+Three-point support identifies confirmed rising Swing Lows P1/P2/P3, then
+fits the least-adjusted P1-P2 line whose contact prices remain inside the
+P1/P2 lower shadows. P1-P2 and P2-P3 must each span at least 15 complete
+bars, while P1-P3 must span at least 50. The unchanged line projected from P2
+must cross P3's lower shadow. Each contact may be at most 0.65 ATR above its
+candle low, no intervening candle body may cross the projected support, and
+detection is published only after P3's right-side Pivot window closes.
+Pattern geometry keeps raw Swing Lows in `points` and fitted prices in
+`line_contacts`.
+
 HorizontalSupport.detect_at(data, anchor_index)-\>PatternResult
 
 Horizontal support requires confirmed Swing anchors. Double-bottom anchors

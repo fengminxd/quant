@@ -1,0 +1,15 @@
+{
+  "telegram": {
+    "token_env": "TELEGRAM_BOT_TOKEN",
+    "chat_id_env": "TELEGRAM_CHAT_ID",
+    "retries": 3,
+    "timeout_seconds": 20
+  },
+  "state_db": "logs/notifications/state.sqlite3",
+  "scan_delay_seconds": 5,
+  "heartbeat_interval_seconds": 300,
+  "bootstrap_retry_seconds": 30,
+  "delivery_retry_interval_seconds": 10,
+  "data_lag_alert_bars": 1,
+  "max_restart_replay_bars": 1000
+}

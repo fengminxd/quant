@@ -16,6 +16,7 @@ dependencies = [
 [project.scripts]
 market-data-collector = "data.run_collector:main"
 trade-research-bundle = "research.run_trade_bundle:main"
+pattern-notifications = "notifications.run:main"
 
 [tool.setuptools.packages.find]
 include = [
@@ -25,6 +26,7 @@ include = [
     "factors*",
     "features*",
     "indicators*",
+    "notifications*",
     "patterns*",
     "research*",
     "visualization*",

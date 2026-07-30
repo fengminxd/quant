@@ -287,7 +287,7 @@ def test_report_describes_reference_and_delayed_fill(tmp_path: Path) -> None:
     source = bars(12)
     source[3] = Bar(source[3].timestamp, 100.0, 101.0, 99.0, 100.5, 1000.0, "1h")
     source[9] = Bar(source[9].timestamp, 100.5, 100.8, 99.8, 100.2, 1000.0, "1h")
-    source[10] = Bar(source[10].timestamp, 100.2, 103.6, 99.8, 103.0, 1000.0, "1h")
+    source[10] = Bar(source[10].timestamp, 100.2, 104.6, 99.8, 104.0, 1000.0, "1h")
     output = tmp_path / "BTC_1h_激进开单报告.txt"
     start = datetime(2026, 7, 1, 8, tzinfo=UTC_PLUS_8)
 
@@ -297,6 +297,11 @@ def test_report_describes_reference_and_delayed_fill(tmp_path: Path) -> None:
         output,
         start=start,
         end=start + timedelta(hours=11),
+        evaluator=AggressiveAnchorStrategyEvaluator(
+            stop_loss_ratio=0.02,
+            lock_trigger_ratio=0.02,
+            take_profit_ratio=0.04,
+        ),
     )
 
     text = output.read_text(encoding="utf-8")
@@ -305,6 +310,9 @@ def test_report_describes_reference_and_delayed_fill(tmp_path: Path) -> None:
     assert "reference_price_source=lower_shadow_long_bullish_open" in text
     assert "confirmation_delay_bars=5" in text
     assert "entry_wait_bars=1" in text
+    assert "4%止盈: 1" in text
+    assert "2%保护止盈: 0" in text
+    assert "达到4%止盈案例 (1)" in text
 
 
 class FakeStore:

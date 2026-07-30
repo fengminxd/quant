@@ -1,0 +1,74 @@
+SOL 1h 激进开单策略结果统计
+数据来源: 数据库历史已收盘K线独立扫描；不读取任何既有PDF或开单报告。
+扫描范围: 2026-06-03 18:00:00 UTC+8 至 2026-07-28 17:00:00 UTC+8
+时间去重后结构数: 23
+六根K线内成交: 13
+挂单失效或参考K线不合格: 10
+
+统计口径:
+- PATTERN_006 不作为独立入场规则；仅 FIXED_COMBO_002 中的 PATTERN_006 可入场，其阻力逻辑仍供 FIXED_COMBO_004/008 使用；PATTERN_008 禁止交易和报告；FIXED_COMBO_006 全局禁用。
+- 指定末端锚点必须完成右侧 Pivot Low / Pivot High 确认；确认K线收盘后才生成参考挂单。
+- 买入：锚点下影线不长于实体时取最低价，下影线长于实体时阳线取开盘价、阴线取收盘价，十字星取最低价；卖出：锚点上影线不长于实体时取最高价，上影线长于实体时阳线取收盘价、阴线取开盘价，十字星取最高价。
+- 从锚点确认后的第1根至第6根K线检查成交；买单 low<=参考价，卖单 high>=参考价，超时失效。
+- 成交K线内不判断出场，止损/止盈从成交后的下一根K线开始检查。
+- 初始止损 2.0000%；浮盈达到 2.0000% 后，将保护止损设在浮盈 2.0000% 价格；最终止盈 4.0000%。
+- 保护止损从触发K线的下一根K线开始生效，避免假设触发K线内路径。
+- 已激活保护后，同根K线同时触发保护止损与4.0000%止盈时，保护止损优先。
+- 初始止损与盈利障碍同根触发时，按保守原则计为初始止损。
+- 未决案例计入总案例分母；同时另列仅已平仓案例占比。
+- 三角方向由最早边界锚点处的既有趋势冻结：上涨取下边界P3买入，下跌取上边界P3卖出。
+- 成本估计: 开单手续费 0.0200%，平仓手续费 0.0500%，单边滑点 0.0200%，资金费 0.0000%。
+- 限价触碰基于OHLC；未模拟盘口排队、跳空改善或部分成交。
+- 入场前末端 Pivot 已因果确认: 13/13
+- 同根K线多障碍触发并按保守规则处理: 0
+
+=== 全部符合激进入场规则案例 ===
+总案例: 13
+4%止盈: 0 (0.00% / 全部案例)
+2%保护止盈: 5 (38.46% / 全部案例)
+止损: 8 (61.54% / 全部案例)
+未决: 0 (0.00% / 全部案例)
+仅已平仓占比: 盈利 38.46%，止损 61.54%
+
+=== FIXED_COMBO 符合激进入场规则案例 ===
+总案例: 8
+4%止盈: 0 (0.00% / 全部案例)
+2%保护止盈: 3 (37.50% / 全部案例)
+止损: 5 (62.50% / 全部案例)
+未决: 0 (0.00% / 全部案例)
+仅已平仓占比: 盈利 37.50%，止损 62.50%
+
+FIXED_COMBO 挂单失效或参考K线不合格: 1
+
+=== 止损案例 (8) ===
+symbol=SOL timeframe=1h pattern=PATTERN_006 rule=strict_two_swing_horizontal_resistance outcome=stop_loss combo=FIXED_COMBO_002 conditions=[second_anchor_open_below_ema99] direction=bearish entry_rule='second horizontal-resistance anchor' reference_time=2026-06-08 06:00:00 UTC+8 reference_price_source=upper_shadow_long_bullish_close reference_price=65.78000000 entry_time=2026-06-08 09:00:00 UTC+8 entry=65.78000000 anchor_geometry=66.79000000 stop=67.09560000 lock_trigger=64.46440000 locked_stop=64.46440000 target=63.14880000 lock_time=- exit_time=2026-06-08 20:00:00 UTC+8 bars_held=11 net_return_after_cost=-2.1100% simultaneous=False detected_time=2026-06-08 08:00:00 UTC+8 confirmation_delay_bars=2 entry_wait_bars=1 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=breakout_retest outcome=stop_loss combo=- conditions=[-] direction=bullish entry_rule='second horizontal-support anchor' reference_time=2026-06-18 06:00:00 UTC+8 reference_price_source=lower_shadow_long_bullish_open reference_price=71.57000000 entry_time=2026-06-18 12:00:00 UTC+8 entry=71.57000000 anchor_geometry=70.76000000 stop=70.13860000 lock_trigger=73.00140000 locked_stop=73.00140000 target=74.43280000 lock_time=- exit_time=2026-06-18 23:00:00 UTC+8 bars_held=11 net_return_after_cost=-2.1100% simultaneous=False detected_time=2026-06-18 11:00:00 UTC+8 confirmation_delay_bars=5 entry_wait_bars=1 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=double_swing_low outcome=stop_loss combo=- conditions=[-] direction=bullish entry_rule='second horizontal-support anchor' reference_time=2026-06-18 13:00:00 UTC+8 reference_price_source=lower_shadow_long_bullish_open reference_price=71.01000000 entry_time=2026-06-18 19:00:00 UTC+8 entry=71.01000000 anchor_geometry=70.59000000 stop=69.58980000 lock_trigger=72.43020000 locked_stop=72.43020000 target=73.85040000 lock_time=- exit_time=2026-06-18 23:00:00 UTC+8 bars_held=4 net_return_after_cost=-2.1100% simultaneous=False detected_time=2026-06-18 18:00:00 UTC+8 confirmation_delay_bars=5 entry_wait_bars=1 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_003 rule=strict_three_point_slope_support outcome=stop_loss combo=FIXED_COMBO_005 conditions=[third_anchor_lower_shadow_touch_ema99_close_at_or_above] p1_p2_span_bars=132 p2_p3_span_bars=25 p1_p3_span_bars=157 direction=bullish entry_rule='third trendline-support anchor' reference_time=2026-07-07 22:00:00 UTC+8 reference_price_source=lower_shadow_not_longer_low reference_price=80.45000000 entry_time=2026-07-08 06:00:00 UTC+8 entry=80.45000000 anchor_geometry=80.45000000 stop=78.84100000 lock_trigger=82.05900000 locked_stop=82.05900000 target=83.66800000 lock_time=- exit_time=2026-07-08 09:00:00 UTC+8 bars_held=3 net_return_after_cost=-2.1100% simultaneous=False detected_time=2026-07-08 00:00:00 UTC+8 confirmation_delay_bars=2 entry_wait_bars=6 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_003 rule=strict_three_point_slope_support outcome=stop_loss combo=FIXED_COMBO_005 conditions=[first_anchor_double_bottom_support] p1_p2_span_bars=47 p2_p3_span_bars=26 p1_p3_span_bars=73 direction=bullish entry_rule='third trendline-support anchor' reference_time=2026-07-12 00:00:00 UTC+8 reference_price_source=lower_shadow_not_longer_low reference_price=77.62000000 entry_time=2026-07-12 07:00:00 UTC+8 entry=77.62000000 anchor_geometry=77.62000000 stop=76.06760000 lock_trigger=79.17240000 locked_stop=79.17240000 target=80.72480000 lock_time=- exit_time=2026-07-12 08:00:00 UTC+8 bars_held=1 net_return_after_cost=-2.1100% simultaneous=False detected_time=2026-07-12 02:00:00 UTC+8 confirmation_delay_bars=2 entry_wait_bars=5 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_007 rule=confirmed_three_swing_low_inverse_head_shoulders outcome=stop_loss combo=FIXED_COMBO_003 conditions=[head_double_bottom_support] direction=bullish entry_rule='right-shoulder anchor' reference_time=2026-07-16 16:00:00 UTC+8 reference_price_source=lower_shadow_long_bearish_close reference_price=76.10000000 entry_time=2026-07-16 23:00:00 UTC+8 entry=76.10000000 anchor_geometry=75.57000000 stop=74.57800000 lock_trigger=77.62200000 locked_stop=77.62200000 target=79.14400000 lock_time=- exit_time=2026-07-17 13:00:00 UTC+8 bars_held=14 net_return_after_cost=-2.1100% simultaneous=False detected_time=2026-07-16 21:00:00 UTC+8 confirmation_delay_bars=5 entry_wait_bars=2 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_003 rule=strict_three_point_slope_support outcome=stop_loss combo=FIXED_COMBO_005 conditions=[first_anchor_double_bottom_support] p1_p2_span_bars=114 p2_p3_span_bars=16 p1_p3_span_bars=130 direction=bullish entry_rule='third trendline-support anchor' reference_time=2026-07-23 07:00:00 UTC+8 reference_price_source=lower_shadow_long_bearish_close reference_price=77.93000000 entry_time=2026-07-23 10:00:00 UTC+8 entry=77.93000000 anchor_geometry=77.44000000 stop=76.37140000 lock_trigger=79.48860000 locked_stop=79.48860000 target=81.04720000 lock_time=- exit_time=2026-07-23 22:00:00 UTC+8 bars_held=12 net_return_after_cost=-2.1100% simultaneous=False detected_time=2026-07-23 09:00:00 UTC+8 confirmation_delay_bars=2 entry_wait_bars=1 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=breakout_retest outcome=stop_loss combo=- conditions=[-] direction=bullish entry_rule='second horizontal-support anchor' reference_time=2026-07-24 10:00:00 UTC+8 reference_price_source=lower_shadow_long_bearish_close reference_price=75.50000000 entry_time=2026-07-24 17:00:00 UTC+8 entry=75.50000000 anchor_geometry=75.23000000 stop=73.99000000 lock_trigger=77.01000000 locked_stop=77.01000000 target=78.52000000 lock_time=- exit_time=2026-07-24 21:00:00 UTC+8 bars_held=4 net_return_after_cost=-2.1100% simultaneous=False detected_time=2026-07-24 15:00:00 UTC+8 confirmation_delay_bars=5 entry_wait_bars=2 causal_at_entry=True
+
+=== 触发2%保护止损案例 (5) ===
+symbol=SOL timeframe=1h pattern=PATTERN_003 rule=strict_three_point_slope_support outcome=protected_profit combo=- conditions=[-] p1_p2_span_bars=40 p2_p3_span_bars=110 p1_p3_span_bars=150 direction=bullish entry_rule='third trendline-support anchor' reference_time=2026-06-19 12:00:00 UTC+8 reference_price_source=lower_shadow_not_longer_low reference_price=68.16000000 entry_time=2026-06-19 15:00:00 UTC+8 entry=68.16000000 anchor_geometry=68.16000000 stop=66.79680000 lock_trigger=69.52320000 locked_stop=69.52320000 target=70.88640000 lock_time=2026-06-19 21:00:00 UTC+8 exit_time=2026-06-19 22:00:00 UTC+8 bars_held=7 net_return_after_cost=1.8900% simultaneous=False detected_time=2026-06-19 14:00:00 UTC+8 confirmation_delay_bars=2 entry_wait_bars=1 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=double_swing_low outcome=protected_profit combo=FIXED_COMBO_001 conditions=[second_anchor_close_above_ema99] direction=bullish entry_rule='second horizontal-support anchor' reference_time=2026-07-05 10:00:00 UTC+8 reference_price_source=lower_shadow_not_longer_low reference_price=80.16000000 entry_time=2026-07-05 17:00:00 UTC+8 entry=80.16000000 anchor_geometry=80.16000000 stop=78.55680000 lock_trigger=81.76320000 locked_stop=81.76320000 target=83.36640000 lock_time=2026-07-06 05:00:00 UTC+8 exit_time=2026-07-06 06:00:00 UTC+8 bars_held=13 net_return_after_cost=1.8900% simultaneous=False detected_time=2026-07-05 15:00:00 UTC+8 confirmation_delay_bars=5 entry_wait_bars=2 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_003 rule=strict_three_point_slope_support outcome=protected_profit combo=FIXED_COMBO_005 conditions=[third_anchor_lower_shadow_touch_ema99_close_at_or_above] p1_p2_span_bars=85 p2_p3_span_bars=20 p1_p3_span_bars=105 direction=bullish entry_rule='third trendline-support anchor' reference_time=2026-07-06 13:00:00 UTC+8 reference_price_source=lower_shadow_not_longer_low reference_price=80.11000000 entry_time=2026-07-06 17:00:00 UTC+8 entry=80.11000000 anchor_geometry=80.11000000 stop=78.50780000 lock_trigger=81.71220000 locked_stop=81.71220000 target=83.31440000 lock_time=2026-07-07 00:00:00 UTC+8 exit_time=2026-07-07 01:00:00 UTC+8 bars_held=8 net_return_after_cost=1.8900% simultaneous=False detected_time=2026-07-06 15:00:00 UTC+8 confirmation_delay_bars=2 entry_wait_bars=2 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_002 rule=symmetrical_triangle outcome=protected_profit combo=- conditions=[-] direction=bullish entry_rule='uptrend lower-boundary P3' reference_time=2026-07-06 17:00:00 UTC+8 reference_price_source=lower_shadow_not_longer_low reference_price=80.00000000 entry_time=2026-07-06 20:00:00 UTC+8 entry=80.00000000 anchor_geometry=80.00000000 stop=78.40000000 lock_trigger=81.60000000 locked_stop=81.60000000 target=83.20000000 lock_time=2026-07-07 00:00:00 UTC+8 exit_time=2026-07-07 01:00:00 UTC+8 bars_held=5 net_return_after_cost=1.8900% simultaneous=False detected_time=2026-07-06 19:00:00 UTC+8 confirmation_delay_bars=2 entry_wait_bars=1 causal_at_entry=True
+symbol=SOL timeframe=1h pattern=PATTERN_003 rule=strict_three_point_slope_support outcome=protected_profit combo=FIXED_COMBO_005 conditions=[first_anchor_double_bottom_support,third_anchor_breakout_retest_support] p1_p2_span_bars=24 p2_p3_span_bars=33 p1_p3_span_bars=57 direction=bullish entry_rule='third trendline-support anchor' reference_time=2026-07-20 06:00:00 UTC+8 reference_price_source=lower_shadow_not_longer_low reference_price=75.58000000 entry_time=2026-07-20 14:00:00 UTC+8 entry=75.58000000 anchor_geometry=75.58000000 stop=74.06840000 lock_trigger=77.09160000 locked_stop=77.09160000 target=78.60320000 lock_time=2026-07-20 19:00:00 UTC+8 exit_time=2026-07-20 20:00:00 UTC+8 bars_held=6 net_return_after_cost=1.8900% simultaneous=False detected_time=2026-07-20 08:00:00 UTC+8 confirmation_delay_bars=2 entry_wait_bars=6 causal_at_entry=True
+
+=== 达到4%止盈案例 (0) ===
+
+=== 截至数据末尾未触发案例 (0) ===
+
+=== 激进参考挂单未成交或不合格结构 (10) ===
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=double_swing_low combo=- detected_time=2026-06-10 05:00:00 UTC+8 anchors=[2026-06-08 03:00:00 UTC+8,2026-06-10 00:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_003 rule=strict_three_point_slope_support combo=- detected_time=2026-06-15 04:00:00 UTC+8 anchors=[2026-06-12 21:00:00 UTC+8,2026-06-13 13:00:00 UTC+8,2026-06-15 02:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_007 rule=confirmed_three_swing_low_inverse_head_shoulders combo=- detected_time=2026-06-21 03:00:00 UTC+8 anchors=[2026-06-18 06:00:00 UTC+8,2026-06-19 20:00:00 UTC+8,2026-06-20 22:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=breakout_retest combo=- detected_time=2026-06-22 12:00:00 UTC+8 anchors=[2026-06-20 13:00:00 UTC+8,2026-06-22 07:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=double_swing_low combo=- detected_time=2026-06-23 21:00:00 UTC+8 anchors=[2026-06-19 20:00:00 UTC+8,2026-06-23 16:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=breakout_retest combo=- detected_time=2026-06-29 11:00:00 UTC+8 anchors=[2026-06-26 15:00:00 UTC+8,2026-06-29 06:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_003 rule=strict_three_point_slope_support combo=FIXED_COMBO_005 detected_time=2026-07-01 11:00:00 UTC+8 anchors=[2026-06-26 03:00:00 UTC+8,2026-06-29 06:00:00 UTC+8,2026-07-01 09:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=double_swing_low combo=- detected_time=2026-07-18 02:00:00 UTC+8 anchors=[2026-07-14 05:00:00 UTC+8,2026-07-17 21:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=breakout_retest combo=- detected_time=2026-07-20 07:00:00 UTC+8 anchors=[2026-07-18 10:00:00 UTC+8,2026-07-20 02:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars
+symbol=SOL timeframe=1h pattern=PATTERN_004 rule=breakout_retest combo=- detected_time=2026-07-22 06:00:00 UTC+8 anchors=[2026-07-20 09:00:00 UTC+8,2026-07-22 01:00:00 UTC+8] reason=unconfirmed/misaligned final pivot or no post-confirmation limit fill within six bars

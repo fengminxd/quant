@@ -56,12 +56,17 @@ def write_aggressive_trade_report(
     ]
     lines = _header(start, end, events, outcomes, excluded, engine)
     lines.extend(
-        _summary_lines("全部符合激进入场规则案例", summarize_aggressive_outcomes(outcomes))
+        _summary_lines(
+            "全部符合激进入场规则案例",
+            summarize_aggressive_outcomes(outcomes),
+            engine,
+        )
     )
     lines.extend(
         _summary_lines(
             "FIXED_COMBO 符合激进入场规则案例",
             summarize_aggressive_outcomes(fixed),
+            engine,
         )
     )
     lines.extend(
@@ -72,8 +77,11 @@ def write_aggressive_trade_report(
     )
     sections = (
         ("stop_loss", "止损案例"),
-        ("protected_profit", "触发1.5%保护止损案例"),
-        ("take_profit", "达到3%止盈案例"),
+        (
+            "protected_profit",
+            f"触发{_percentage_label(engine.lock_trigger_ratio)}保护止损案例",
+        ),
+        ("take_profit", f"达到{_percentage_label(engine.take_profit_ratio)}止盈案例"),
         ("unresolved", "截至数据末尾未触发案例"),
     )
     for status, title in sections:
@@ -142,7 +150,10 @@ def _header(
             f"{evaluator.take_profit_ratio:.4%}。"
         ),
         "- 保护止损从触发K线的下一根K线开始生效，避免假设触发K线内路径。",
-        "- 已激活保护后，同根K线同时触发保护止损与3%止盈时，保护止损优先。",
+        (
+            "- 已激活保护后，同根K线同时触发保护止损与"
+            f"{evaluator.take_profit_ratio:.4%}止盈时，保护止损优先。"
+        ),
         "- 初始止损与盈利障碍同根触发时，按保守原则计为初始止损。",
         "- 未决案例计入总案例分母；同时另列仅已平仓案例占比。",
         (
@@ -162,16 +173,22 @@ def _header(
     ]
 
 
-def _summary_lines(title: str, summary: AggressiveTradeSummary) -> list[str]:
+def _summary_lines(
+    title: str,
+    summary: AggressiveTradeSummary,
+    evaluator: AggressiveAnchorStrategyEvaluator,
+) -> list[str]:
+    take_profit = _percentage_label(evaluator.take_profit_ratio)
+    protected_profit = _percentage_label(evaluator.lock_trigger_ratio)
     return [
         f"=== {title} ===",
         f"总案例: {summary.total}",
         (
-            f"3%止盈: {summary.take_profit} "
+            f"{take_profit}止盈: {summary.take_profit} "
             f"({summary.percentage(summary.take_profit):.2f}% / 全部案例)"
         ),
         (
-            f"1.5%保护止盈: {summary.protected_profit} "
+            f"{protected_profit}保护止盈: {summary.protected_profit} "
             f"({summary.percentage(summary.protected_profit):.2f}% / 全部案例)"
         ),
         (
@@ -191,6 +208,12 @@ def _summary_lines(title: str, summary: AggressiveTradeSummary) -> list[str]:
     ]
 
 
+def _percentage_label(value: float) -> str:
+    """Format a strategy ratio compactly for human-facing section labels."""
+
+    return f"{value * 100:g}%"
+
+
 def _outcome_line(outcome: AggressiveTradeOutcome) -> str:
     plan = outcome.plan
     event = plan.event
@@ -202,10 +225,12 @@ def _outcome_line(outcome: AggressiveTradeOutcome) -> str:
     exit_time = _time(outcome.exit_timestamp)
     lock_time = _time(outcome.lock_timestamp)
     net = f"{outcome.net_return:.4%}" if outcome.net_return is not None else "-"
+    anchor_spans = _anchor_span_fields(event)
     return (
         f"symbol={event.symbol} timeframe={event.timeframe} "
         f"pattern={event.pattern_id} rule={event.rule} outcome={outcome.status} "
         f"combo={event.priority_combination_id or '-'} conditions=[{conditions}] "
+        f"{anchor_spans}"
         f"direction={plan.direction} entry_rule={plan.entry_rule!r} "
         f"reference_time={format_utc_plus_8(plan.structure_anchor.timestamp)} "
         f"reference_price_source={plan.reference_price_source} "
@@ -222,6 +247,19 @@ def _outcome_line(outcome: AggressiveTradeOutcome) -> str:
         f"confirmation_delay_bars={plan.confirmation_delay_bars} "
         f"entry_wait_bars={plan.entry_wait_bars} "
         f"causal_at_entry={plan.causal_at_entry}"
+    )
+
+
+def _anchor_span_fields(event: PatternScanEvent) -> str:
+    """Return explicit P1/P2/P3 bar spans for three-point support trades."""
+
+    if event.pattern_id != "PATTERN_003" or len(event.anchors) != 3:
+        return ""
+    p1, p2, p3 = event.anchors
+    return (
+        f"p1_p2_span_bars={p2.index - p1.index} "
+        f"p2_p3_span_bars={p3.index - p2.index} "
+        f"p1_p3_span_bars={p3.index - p1.index} "
     )
 
 

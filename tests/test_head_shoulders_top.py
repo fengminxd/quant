@@ -48,6 +48,30 @@ def test_rejects_span_below_40_bars() -> None:
     assert detector().detect(bars).detected is False
 
 
+def test_shorter_leg_exactly_two_thirds_of_longer_leg_is_allowed() -> None:
+    result = detector().detect(
+        top_bars(left_index=10, head_index=55, right_index=85)
+    )
+
+    assert result.detected is True
+    assert result.features["leg_span_ratio"].value == pytest.approx(2.0 / 3.0)
+    assert result.metadata["min_leg_span_ratio"] == pytest.approx(2.0 / 3.0)
+
+
+def test_rejects_shorter_leg_below_two_thirds_of_longer_leg() -> None:
+    bars = top_bars(left_index=10, head_index=55, right_index=84)
+
+    assert detector().detect(bars).detected is False
+
+
+def test_neckline_swing_lows_are_limited_to_one_atr_difference() -> None:
+    result = detector().detect(top_bars())
+
+    assert result.detected is True
+    assert result.features["neckline_price_error_atr"].value <= 1.0
+    assert result.metadata["max_neckline_error_atr"] == 1.0
+
+
 def test_rejects_head_that_is_not_above_both_shoulders() -> None:
     assert detector().detect(top_bars(head_price=40.2)).detected is False
 
@@ -66,7 +90,7 @@ def test_right_shoulder_requires_right_side_confirmation() -> None:
     assert confirmed.features["breakdown_confirmed"].value == 0.0
 
 
-def test_zec_4h_regression_uses_supplied_utc_plus_8_anchors() -> None:
+def test_zec_4h_regression_is_rejected_by_neckline_price_difference() -> None:
     origin = datetime(2026, 5, 7, 12, tzinfo=timezone.utc)
     bars = top_bars(
         price_ceiling=1000.0,
@@ -80,16 +104,20 @@ def test_zec_4h_regression_uses_supplied_utc_plus_8_anchors() -> None:
         origin=origin,
     )
 
-    result = HeadAndShouldersTop().detect(bars)
+    strict = HeadAndShouldersTop().detect(bars)
+    relaxed = HeadAndShouldersTop(max_neckline_error_atr=100.0).detect(bars)
 
-    assert result.detected is True
-    assert result.features["span"].value == 149.0
-    assert result.geometry["point_timestamps"] == [
+    assert strict.detected is False
+    assert relaxed.detected is True
+    assert relaxed.features["span"].value == 149.0
+    assert relaxed.features["leg_span_ratio"].value == pytest.approx(74.0 / 75.0)
+    assert relaxed.features["neckline_price_error_atr"].value > 1.0
+    assert relaxed.geometry["point_timestamps"] == [
         "2026-05-09 04:00",
         "2026-05-21 16:00",
         "2026-06-03 00:00",
     ]
-    assert result.geometry["points"] == [
+    assert relaxed.geometry["points"] == [
         (10, pytest.approx(642.87)),
         (85, pytest.approx(686.39)),
         (159, pytest.approx(644.67)),

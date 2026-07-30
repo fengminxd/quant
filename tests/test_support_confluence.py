@@ -76,6 +76,19 @@ def test_hype_support_confluence_scores_high_after_confirmation() -> None:
         "2026-05-18 23:00",
         "2026-05-20 08:00",
     ]
+    assert evaluation.trendline.geometry["points"] == [
+        (100, 40.649),
+        (146, 44.18),
+        (179, 47.063),
+    ]
+    assert evaluation.trendline.geometry["line_contacts"] == [
+        (100, 40.649),
+        (146, pytest.approx(44.38373417721519)),
+        (179, pytest.approx(47.063)),
+    ]
+    assert evaluation.trendline.features["p2_anchor_adjustment"].value == pytest.approx(
+        0.20373417721518905
+    )
     assert evaluation.horizontal.detected is True
     assert evaluation.horizontal.metadata["rule_type"] == "breakout_retest"
     assert evaluation.horizontal.geometry["point_timestamps"] == [

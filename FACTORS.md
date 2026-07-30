@@ -384,10 +384,13 @@ evidence of buying exhaustion than an arbitrary three-high sequence.
 ## Inputs
 
 -   span
+-   leg_span_difference
+-   leg_span_ratio
 -   shoulder_price_error_atr
 -   head_height_atr
 -   head_extreme_error_atr
 -   duration_asymmetry
+-   neckline_price_error_atr
 -   prior_advance_atr
 -   breakdown_confirmed
 -   breakdown_distance_atr
@@ -396,17 +399,17 @@ evidence of buying exhaustion than an arbitrary three-high sequence.
 ## Formula
 
 ``` text
-0.20*span_quality
-+0.25*shoulder_alignment
-+0.20*head_zone_quality
-+0.15*duration_symmetry
-+0.05*prior_advance
-+0.15*breakdown_quality
+0.18*span_quality
++0.225*shoulder_alignment
++0.18*head_zone_quality
++0.135*duration_symmetry
++0.045*prior_advance
++0.135*breakdown_quality
++0.10*neckline_horizontal_quality
 ```
 
-Head-zone quality combines height above the shoulders and distance from the
-absolute zone high. Breakdown quality combines close distance beneath the
-projected neckline and volume relative to the preceding 20 bars.
+Neckline horizontal quality decreases linearly from 100 at equal Swing Low
+prices to 0 at the hard 1.0 ATR difference limit.
 
 ## Output
 

@@ -57,7 +57,7 @@ AscendingTriangleScore = TriangleScore
 class ThreePointTrendlineSupportScore(Factor):
     """Score the structural quality of strict ascending support."""
 
-    def __init__(self, min_total_span: int = 40) -> None:
+    def __init__(self, min_total_span: int = 50) -> None:
         if min_total_span <= 0:
             raise ValueError("min_total_span must be positive")
         self.min_total_span = min_total_span
@@ -171,7 +171,7 @@ class HeadAndShouldersTopScore(Factor):
     def calculate(self, features: Mapping[str, FeatureResult]) -> FactorResult:
         """Return a bounded quality score without emitting a trade direction."""
 
-        score = _head_shoulders_quality(
+        structure_score = _head_shoulders_quality(
             features,
             head_key="head_height_atr",
             prior_key="prior_advance_atr",
@@ -179,6 +179,10 @@ class HeadAndShouldersTopScore(Factor):
             distance_key="breakdown_distance_atr",
             volume_key="breakdown_volume_ratio",
         )
+        neckline_score = clamp(
+            (1.0 - _value(features, "neckline_price_error_atr")) * 100.0
+        )
+        score = clamp(0.90 * structure_score + 0.10 * neckline_score)
         return FactorResult(
             "HeadAndShouldersTopScore",
             round(score, 4),

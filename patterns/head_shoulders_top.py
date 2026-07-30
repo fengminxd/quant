@@ -27,8 +27,12 @@ class HeadAndShouldersTop(Pattern):
         max_shoulder_error_atr: float = 1.0,
         max_head_extreme_error_atr: float = 0.1,
         max_breakdown_bars: int = 40,
+        min_leg_span_ratio: float = 2.0 / 3.0,
+        max_neckline_error_atr: float = 1.0,
     ) -> None:
         self.min_span = min_span
+        self.min_leg_span_ratio = min_leg_span_ratio
+        self.max_neckline_error_atr = max_neckline_error_atr
         self.factor = HeadAndShouldersTopScore()
         self._engine = InverseHeadShoulders(
             swing_detector=pivot_detector or PivotDetector(left=5, right=5),
@@ -39,8 +43,8 @@ class HeadAndShouldersTop(Pattern):
             max_shoulder_error_atr=max_shoulder_error_atr,
             max_head_extreme_error_atr=max_head_extreme_error_atr,
             max_breakout_bars=max_breakdown_bars,
-            min_leg_span_ratio=None,
-            max_neckline_error_atr=None,
+            min_leg_span_ratio=min_leg_span_ratio,
+            max_neckline_error_atr=max_neckline_error_atr,
         )
 
     def detect(self, data: Sequence[Bar]) -> PatternResult:
@@ -68,6 +72,8 @@ class HeadAndShouldersTop(Pattern):
                 "timestamp_semantics": "bar_open_time",
                 "timeframe": mirrored.metadata["timeframe"],
                 "min_span_bars": self.min_span,
+                "min_leg_span_ratio": self.min_leg_span_ratio,
+                "max_neckline_error_atr": self.max_neckline_error_atr,
                 "left_shoulder_index": mirrored.metadata["left_shoulder_index"],
             },
         )

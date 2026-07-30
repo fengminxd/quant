@@ -264,15 +264,17 @@ and invalidates the structure.
 -   Exactly 3 selected confirmed swing-low anchors
 -   P1 \< P2 \< P3 (positive slope)
 -   Three-anchor normalized trend strength must be \<= 0.16
--   P1-P3 \>= 40 complete bars
--   P1-P2 \>= 10 complete bars
--   P2-P3 \>= 10 complete bars
+-   P1-P3 \>= 50 complete bars
+-   P1-P2 \>= 15 complete bars
+-   P2-P3 \>= 15 complete bars
 
 ## Detection Rules
 
 -   Evaluate all confirmed swing-low combinations; they need not be consecutive.
 -   Keep swing denoising independent from the trendline anchor-spacing rules.
--   The middle swing low must fit the P1-P3 line within the configured ATR tolerance.
+-   P1/P2 line contacts may move upward from their Swing Lows inside the actual
+    lower shadows, by no more than the configured ATR tolerance.
+-   Choose the least-adjusted eligible P1/P2 line that crosses P3's lower shadow.
 -   Fit `slope_log` by OLS over all three anchor lows and their bar indexes.
 -   At the P3 close, compute causal `atr_pct = ATR14 / close`.
 -   Reject the candidate when `slope_log / atr_pct > 0.16`.
@@ -304,12 +306,13 @@ and invalidates the structure.
 
 ThreePointTrendlineSupportScore
 
-## Historical Invalidation Case
+## Historical Lower-Shadow Contact Case
 
 HYPE 15m, UTC+8 opening timestamps: 2026-07-14 11:15,
 2026-07-14 20:00, and 2026-07-15 09:45. The corresponding Binance lows are
-62.555, 63.588, and 64.863, covering 35 and 55 bars respectively. The P1-P3
-line is below P2 low, so this former tolerance-based candidate is now invalid.
+62.555, 63.588, and 64.863, covering 35 and 55 bars respectively. A line
+through the eligible P1/P2 lower-shadow intervals reaches P3's lower shadow,
+so the structure remains valid without replacing any candle's true low.
 
 ## Invalidation
 
@@ -644,11 +647,13 @@ acceptance beneath the intervening demand boundary.
 -   Three confirmed swing highs ordered left shoulder, head, right shoulder
 -   Left-shoulder to right-shoulder span \>= 40 complete bar intervals
 -   Each shoulder-to-head leg \>= 10 bars
+-   The shorter shoulder-to-head span must be at least 2/3 of the longer span
 -   Head above both shoulders by at least 0.5 ATR
 -   Shoulder price difference \<= 1.0 ATR
 -   Selected head within 0.1 ATR of the absolute head-zone high
 -   One confirmed swing low in each leg forms the neckline
 -   Each neckline low is at least 5 bars from its adjacent highs
+-   The two neckline Swing Low prices must differ by no more than 1.0 ATR
 
 ## Detection Rules
 
@@ -656,6 +661,8 @@ acceptance beneath the intervening demand boundary.
 -   The left shoulder must be a new 40-bar high, preserving the preceding advance.
 -   The right shoulder must be the highest rebound after the right neckline low.
 -   Treat highs within 0.1 ATR as one head liquidity zone; prefer time symmetry.
+-   Among eligible neckline-low pairs, select the pair with the smallest absolute
+    price difference so the neckline is as horizontal as possible.
 -   Use identical bar-count rules for 15m, 1h, and 4h input.
 -   Confirm the structure only after the right swing's right-side window exists.
 -   A close below the projected neckline within 40 bars sets `breakdown_confirmed`.
@@ -667,11 +674,14 @@ acceptance beneath the intervening demand boundary.
 -   span
 -   left_leg_span
 -   right_leg_span
+-   leg_span_difference
+-   leg_span_ratio
 -   shoulder_price_error_atr
 -   head_height_atr
 -   head_extreme_error_atr
 -   duration_asymmetry
 -   neckline_slope_atr_per_bar
+-   neckline_price_error_atr
 -   prior_advance_atr
 -   breakdown_confirmed
 -   breakdown_distance_atr
@@ -700,9 +710,9 @@ trades through it. The strict geometry is:
 
 The 23:00 right shoulder and EMA99 rejection are observable at that candle's
 close, but the strict Swing anchor becomes causally confirmed at 2026-07-12
-04:00 after five right-side bars, with a structure score of 81.9820. A close
+04:00 after five right-side bars, with a structure score of 78.3228. A close
 below the projected neckline at 2026-07-12 07:00 raises the confirmed score to
-96.9820. The regression preserves the distinction between the right-shoulder
+91.8228. The regression preserves the distinction between the right-shoulder
 event time and its later Swing confirmation time.
 This is a bounded research-window result. With the full trailing 161-bar
 production history, the left shoulder is not a new 40-bar high and an earlier
@@ -713,7 +723,9 @@ not replace the active production candidate under the current ranking rules.
 
 -   Head zone does not stand at least 0.5 ATR above both shoulders.
 -   Right shoulder exceeds the ATR shoulder-alignment tolerance.
+-   The shorter shoulder-to-head span is below 2/3 of the longer span.
 -   No confirmed neckline low exists in either leg.
+-   Every eligible neckline-low pair differs by more than 1.0 ATR.
 -   A structure remains unconfirmed until price closes below its neckline.
 
 ## Python Module

@@ -225,7 +225,7 @@ def test_three_point_trendline_support_detects_strict_support() -> None:
     assert result.detected is True
     assert result.geometry["points"] == [(5, 10.0), (25, 12.0), (55, 15.0)]
     assert result.features["body_violation_count"].value == 0.0
-    assert result.features["line_span"].value >= 40.0
+    assert result.features["line_span"].value >= 50.0
 
 
 def test_three_point_trendline_support_rejects_body_crossing() -> None:

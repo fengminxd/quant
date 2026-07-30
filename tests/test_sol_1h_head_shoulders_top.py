@@ -94,7 +94,7 @@ def test_next_bar_is_the_strict_right_shoulder_and_confirms_five_bars_later() ->
     ]
     assert result.features["span"].value == 56.0
     assert result.features["confirmation_lag"].value == 5.0
-    assert result.score == pytest.approx(81.982, abs=1e-4)
+    assert result.score == pytest.approx(78.3228, abs=1e-4)
 
 
 def test_neckline_breakdown_is_confirmed_after_the_structure() -> None:
@@ -105,4 +105,4 @@ def test_neckline_breakdown_is_confirmed_after_the_structure() -> None:
     assert result.metadata["state"] == "breakdown_confirmed"
     assert result.geometry["breakdown_timestamp"] == BREAKDOWN_AT
     assert result.features["breakdown_confirmed"].value == 1.0
-    assert result.score == pytest.approx(96.982, abs=1e-4)
+    assert result.score == pytest.approx(91.8228, abs=1e-4)
