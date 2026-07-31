@@ -24,6 +24,23 @@ def line_coordinates(item: NotificationMatch) -> list[tuple[list[float], list[fl
     return coordinates
 
 
+def test_pattern_002_draws_fitted_boundaries_not_three_anchor_polylines() -> None:
+    item = match(
+        "PATTERN_002",
+        {
+            "upper_points": [(5, 20.0), (15, 18.7), (25, 18.0)],
+            "lower_points": [(8, 10.0), (28, 12.0)],
+            "upper_line": {"start": (5, 20.2), "end": (25, 18.2)},
+            "lower_line": {"start": (8, 10.0), "end": (28, 12.0)},
+        },
+    )
+
+    assert line_coordinates(item) == [
+        ([5, 25], [20.2, 18.2]),
+        ([8, 28], [10.0, 12.0]),
+    ]
+
+
 def test_pattern_005_draws_one_endpoint_line_not_contact_polyline() -> None:
     item = match(
         "PATTERN_005",

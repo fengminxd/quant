@@ -93,7 +93,12 @@ def _draw_candles(
 def _draw_pattern_geometry(axis: plt.Axes, match: NotificationMatch) -> None:
     result = match.pattern
     geometry = result.geometry
-    if result.pattern_id in {"PATTERN_004", "PATTERN_005", "PATTERN_006"}:
+    if result.pattern_id in {
+        "PATTERN_002",
+        "PATTERN_004",
+        "PATTERN_005",
+        "PATTERN_006",
+    }:
         for line in pattern_line_groups(result, (), 0):
             _plot_line(axis, line)
         return
@@ -102,11 +107,7 @@ def _draw_pattern_geometry(axis: plt.Axes, match: NotificationMatch) -> None:
         if len(points) >= 2:
             _plot_line(axis, (points[0], points[-1]))
         return
-    groups = (
-        (geometry.get("upper_points", ()), geometry.get("lower_points", ()))
-        if result.pattern_id == "PATTERN_002"
-        else (geometry.get("line_contacts", geometry.get("points", ())),)
-    )
+    groups = (geometry.get("line_contacts", geometry.get("points", ())),)
     for number, raw in enumerate(groups):
         points = _numeric_points(raw)
         if len(points) >= 2:
