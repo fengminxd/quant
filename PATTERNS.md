@@ -361,6 +361,8 @@ five right-side bars; the structural score is 100.0.
     cannot bridge a gap between their price zones.
 -   Use the intersection midpoint as the common support level.
 -   Find an accepted close above that common level after the first anchor.
+    The breakout and retest must be distinct events with at least one complete
+    candle between them.
 -   Ignore below-resistance trading before that accepted breakout.
 -   After breakout, closes must hold the level within an independently
     configured tolerance (default 0.1 ATR at the retest anchor).
@@ -379,6 +381,7 @@ five right-side bars; the structural score is 100.0.
 -   contact_tolerance_atr
 -   hold_tolerance_atr
 -   breakout_index
+-   breakout_retest_gap_bars
 -   retest_close_distance_atr
 
 `level_error_atr` is the actual anchor contact gap divided by the retest

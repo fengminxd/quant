@@ -29,10 +29,10 @@ def render_notification_chart(
     match: NotificationMatch,
     bars: Sequence[Bar],
 ) -> bytes:
-    """Render all 201 candles with Pattern anchors and UTC+8 labels."""
+    """Render the complete notification window with UTC+8 anchor labels."""
 
-    if len(bars) != 201:
-        raise ValueError("notification chart requires exactly 201 bars")
+    if len(bars) < 201:
+        raise ValueError("notification chart requires at least 201 bars")
     figure, (price_axis, volume_axis) = plt.subplots(
         2,
         1,
@@ -98,6 +98,7 @@ def _draw_pattern_geometry(axis: plt.Axes, match: NotificationMatch) -> None:
         "PATTERN_004",
         "PATTERN_005",
         "PATTERN_006",
+        "PATTERN_009",
     }:
         for line in pattern_line_groups(result, (), 0):
             _plot_line(axis, line)
@@ -192,7 +193,8 @@ def _numeric_points(raw: object) -> list[tuple[int, float]]:
 
 
 def _set_time_ticks(axis: plt.Axes, bars: Sequence[Bar]) -> None:
-    indexes = sorted({round(position * 200 / 7) for position in range(8)})
+    last_index = len(bars) - 1
+    indexes = sorted({round(position * last_index / 7) for position in range(8)})
     labels = [
         format_utc_plus_8(bars[index].timestamp).replace(":00 UTC+8", " UTC+8")
         for index in indexes

@@ -546,14 +546,15 @@ head-and-shoulders rules. The factor never emits Buy/Sell.
 ## Market Logic
 
 A detected structure is not automatically a good execution price. Waiting for
-price to revisit the defended structure and close back on the intended side
-tests whether buyers or sellers still accept that level while avoiding entries
-made after price has already expanded away from it.
+price to revisit the defended structure and place the full candle body back on
+the intended side tests whether buyers or sellers still accept that level while
+avoiding entries made after price has already expanded away from it.
 
 ## Features and Score
 
 -   structure_retest
 -   structure_reclaimed
+-   entry_body_price
 -   entry_distance_atr
 -   bars_since_detection
 
@@ -566,9 +567,10 @@ score =
 ```
 
 The hard gate additionally requires the configured zone, distance, and expiry
-limits. It works best when a visible structure remains defended; it degrades in
-gap moves, one-way breakouts, and regimes where ATR understates jump risk.
-The factor is score-only and never directly returns Buy or Sell.
+limits. The qualifying candle supplies signal evidence only; execution uses the
+next candle open. It works best when a visible structure remains defended; it
+degrades in gap moves, one-way breakouts, and regimes where ATR understates jump
+risk. The factor is score-only and never directly returns Buy or Sell.
 
 ## Validation
 

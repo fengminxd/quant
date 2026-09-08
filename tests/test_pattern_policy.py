@@ -19,7 +19,7 @@ from core.pattern_policy import (
 )
 from factors.trade_feasibility import PatternTradeFeasibilityScorer
 from features.trade_plan import PatternTradePlan, PatternTradePlanExtractor
-from patterns import ThreePointTrendlineResistance, TrendlineSupport
+from patterns import ParallelChannel, ThreePointTrendlineResistance, TrendlineSupport
 from patterns.detector import PatternPollResult
 from research.aggressive_trade_report import write_aggressive_trade_report
 from research.anchor_trade_report import write_anchor_trade_report
@@ -100,10 +100,12 @@ class DisabledResultDetector:
 def test_disabled_implementations_remain_importable_but_policy_is_off() -> None:
     assert TrendlineSupport.pattern_id == "PATTERN_001"
     assert ThreePointTrendlineResistance.pattern_id == "PATTERN_005"
+    assert ParallelChannel.pattern_id == "PATTERN_009"
     assert DISABLED_TRADING_PATTERN_IDS == {
         "PATTERN_001",
         "PATTERN_005",
         "PATTERN_008",
+        "PATTERN_009",
     }
     assert COMBINATION_ONLY_PATTERN_IDS == {"PATTERN_006"}
     assert DISABLED_FIXED_COMBINATION_IDS == {"FIXED_COMBO_006"}
@@ -111,6 +113,7 @@ def test_disabled_implementations_remain_importable_but_policy_is_off() -> None:
     assert not is_trading_pattern_enabled("PATTERN_005")
     assert not is_trading_pattern_enabled("PATTERN_006")
     assert not is_trading_pattern_enabled("PATTERN_008")
+    assert not is_trading_pattern_enabled("PATTERN_009")
     assert not is_pattern_analysis_enabled("PATTERN_008")
     assert is_pattern_analysis_enabled("PATTERN_006")
     assert not is_fixed_combination_enabled("FIXED_COMBO_006")

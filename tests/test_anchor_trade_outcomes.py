@@ -139,12 +139,15 @@ def test_locked_stop_wins_same_bar_ambiguity_against_final_target() -> None:
 def test_summary_and_text_report_keep_fixed_combo_as_separate_cohort(
     tmp_path: Path,
 ) -> None:
-    bars = flat_bars(4)
+    bars = flat_bars(5)
     bars[2] = Bar(
         bars[2].timestamp, 100.0, 100.4, 99.6, 100.05, 1000.0, "1h"
     )
     bars[3] = Bar(
-        bars[3].timestamp, 100.05, 103.5, 100.0, 103.1, 1000.0, "1h"
+        bars[3].timestamp, 100.05, 100.5, 99.8, 100.2, 1000.0, "1h"
+    )
+    bars[4] = Bar(
+        bars[4].timestamp, 100.2, 103.5, 100.0, 103.1, 1000.0, "1h"
     )
     anchors = (
         PatternAnchor(0, bars[0].timestamp, 100.0),
@@ -187,7 +190,7 @@ def test_asymmetric_stop_and_target_ratios(
     expected_stop: float,
     expected_target: float,
 ) -> None:
-    bars = flat_bars()
+    bars = flat_bars(11)
     anchors = (
         PatternAnchor(0, bars[0].timestamp, 100.0),
         PatternAnchor(1, bars[1].timestamp, 100.0),
@@ -231,7 +234,8 @@ def test_report_displays_configured_barriers_and_reward_risk(tmp_path: Path) -> 
 
     text = output.read_text(encoding="utf-8")
     assert "止损比例 1.0000%" in text
-    assert "最多等待 11 根 K 线" in text
+    assert "最多等待 11 根信号 K 线" in text
+    assert "下一根 K 线开盘价入场" in text
     assert "浮盈达到 1.5000%" in text
     assert "最终止盈 3.0000%" in text
     assert "Gross R:R 3.00" in text
@@ -240,12 +244,15 @@ def test_report_displays_configured_barriers_and_reward_risk(tmp_path: Path) -> 
 
 
 def test_report_uses_configured_entry_and_exit_fees(tmp_path: Path) -> None:
-    bars = flat_bars(4)
+    bars = flat_bars(5)
     bars[2] = Bar(
         bars[2].timestamp, 100.0, 100.4, 99.6, 100.0, 1000.0, "1h"
     )
     bars[3] = Bar(
-        bars[3].timestamp, 100.0, 103.5, 99.5, 103.0, 1000.0, "1h"
+        bars[3].timestamp, 100.0, 100.5, 99.5, 100.0, 1000.0, "1h"
+    )
+    bars[4] = Bar(
+        bars[4].timestamp, 100.0, 103.5, 99.5, 103.0, 1000.0, "1h"
     )
     anchors = (
         PatternAnchor(0, bars[0].timestamp, 100.0),

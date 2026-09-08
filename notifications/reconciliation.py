@@ -10,7 +10,10 @@ from data.binance_futures import BinanceFuturesClient
 from data.candle_cache import CandleCache
 from data.candles import Candle, timeframe_to_milliseconds
 from data.market_config import SymbolConfig
-from notifications.config import HISTORY_BARS, NOTIFICATION_TIMEFRAMES
+from notifications.config import (
+    HISTORY_BARS,
+    NOTIFICATION_TIMEFRAMES,
+)
 from notifications.event_store import NotificationEventStore
 from notifications.formatter import telegram_caption
 from notifications.health import (
@@ -19,13 +22,14 @@ from notifications.health import (
     stream_health,
 )
 from notifications.scanner import NotificationPatternScanner
+from notifications.window_policy import NotificationWindowPolicy
 
 
 LOGGER = logging.getLogger(__name__)
 
 
 class CandleReconciler:
-    """Maintain exact 201-candle windows and replay every repaired close."""
+    """Maintain notification windows and replay every repaired close."""
 
     def __init__(
         self,
@@ -35,13 +39,21 @@ class CandleReconciler:
         chart_renderer: Callable[..., bytes],
         *,
         max_restart_replay_bars: int = 1_000,
+        four_hour_history_bars: int = HISTORY_BARS,
+        timeframes: Sequence[str] = NOTIFICATION_TIMEFRAMES,
     ) -> None:
+        if not timeframes or any(
+            value not in NOTIFICATION_TIMEFRAMES for value in timeframes
+        ):
+            raise ValueError("timeframes must be supported notification levels")
         self.exchange = exchange
         self.scanner = scanner
         self.event_store = event_store
         self.chart_renderer = chart_renderer
         self.max_restart_replay_bars = max_restart_replay_bars
-        self.cache = CandleCache(maxlen=HISTORY_BARS)
+        self.window_policy = NotificationWindowPolicy(four_hour_history_bars)
+        self.timeframes = tuple(timeframes)
+        self.cache = CandleCache(maxlen=four_hour_history_bars)
         self.symbols: dict[str, SymbolConfig] = {}
         self.locks: dict[tuple[str, str], asyncio.Lock] = {}
 
@@ -51,7 +63,7 @@ class CandleReconciler:
         self.locks = {
             (symbol.name, timeframe): asyncio.Lock()
             for symbol in symbols
-            for timeframe in NOTIFICATION_TIMEFRAMES
+            for timeframe in self.timeframes
         }
 
     async def warm(
@@ -63,14 +75,14 @@ class CandleReconciler:
     ) -> None:
         """Replace one cache with the latest continuous REST window."""
         async with self.locks[(symbol.name, timeframe)]:
-            if await self._restore_and_replay_locked(symbol, timeframe):
+            if scan_latest and await self._restore_and_replay_locked(symbol, timeframe):
                 return
             await self._reload_locked(symbol, timeframe, scan_latest=scan_latest)
 
     async def process(self, candle: Candle) -> None:
         """Ingest a stream close after repairing any preceding gap."""
 
-        if not candle.is_closed or candle.timeframe not in NOTIFICATION_TIMEFRAMES:
+        if not candle.is_closed or candle.timeframe not in self.timeframes:
             return
         symbol = self.symbols.get(candle.symbol)
         if symbol is None:
@@ -102,7 +114,10 @@ class CandleReconciler:
             if cursor is not None and cursor < status.expected_open_time:
                 await self._restore_and_replay_locked(symbol, timeframe)
                 return
-            if len(candles) != HISTORY_BARS or not status.continuous:
+            if (
+                not self.window_policy.ready(timeframe, len(candles))
+                or not status.continuous
+            ):
                 restored = await self._restore_and_replay_locked(symbol, timeframe)
                 if not restored:
                     await self._reload_locked(symbol, timeframe, scan_latest=True)
@@ -128,7 +143,7 @@ class CandleReconciler:
                 now_ms,
             )
             for symbol in symbols
-            for timeframe in NOTIFICATION_TIMEFRAMES
+            for timeframe in self.timeframes
         ]
 
     async def _ingest_locked(
@@ -144,14 +159,14 @@ class CandleReconciler:
                 await self._reload_locked(symbol, timeframe, scan_latest=False)
             cached = self.cache.get(symbol.name, timeframe)
         if cached and candle.open_time <= cached[-1].open_time:
-            self.cache.update(candle)
+            self.window_policy.update_cache(self.cache, candle)
             return
         interval = timeframe_to_milliseconds(timeframe)
         if cached and candle.open_time - cached[-1].open_time > interval:
             await self._backfill_locked(symbol, timeframe, candle.open_time)
         cached = self.cache.get(symbol.name, timeframe)
         if not cached or candle.open_time > cached[-1].open_time:
-            self.cache.update(candle)
+            self.window_policy.update_cache(self.cache, candle)
             await self._scan_if_ready(symbol.name, timeframe)
         if not candles_are_continuous(
             self.cache.get(symbol.name, timeframe),
@@ -188,7 +203,7 @@ class CandleReconciler:
                 and candle.close_time < now
                 and start <= candle.open_time <= target_open_time
             ):
-                self.cache.update(candle)
+                self.window_policy.update_cache(self.cache, candle)
                 await self._scan_if_ready(symbol.name, timeframe)
 
     async def _reload_locked(
@@ -198,7 +213,9 @@ class CandleReconciler:
         *,
         scan_latest: bool,
     ) -> None:
-        candles = await self._recent_completed(symbol, timeframe)
+        candles = await self.window_policy.recent_completed(
+            self.exchange, symbol, timeframe
+        )
         self.cache.replace(symbol.name, timeframe, candles)
         if scan_latest:
             await self._scan_if_ready(symbol.name, timeframe)
@@ -228,7 +245,8 @@ class CandleReconciler:
                 missing,
                 replay_count,
             )
-        start = max(0, first_replay - (HISTORY_BARS - 1) * interval)
+        history_bars = self.window_policy.history_bars(timeframe)
+        start = max(0, first_replay - (history_bars - 1) * interval)
         count = (expected - start) // interval + 1
         fetched = await self.exchange.fetch_klines(
             symbol,
@@ -251,34 +269,16 @@ class CandleReconciler:
                 f"restart history is incomplete for {symbol.name} {timeframe}"
             )
         prefix = [candle for candle in completed if candle.open_time < first_replay]
-        self.cache.replace(symbol.name, timeframe, prefix[-(HISTORY_BARS - 1) :])
+        self.cache.replace(symbol.name, timeframe, prefix[-(history_bars - 1) :])
         for candle in completed:
             if candle.open_time >= first_replay:
-                self.cache.update(candle)
+                self.window_policy.update_cache(self.cache, candle)
                 await self._scan_if_ready(symbol.name, timeframe)
         return True
 
-    async def _recent_completed(
-        self,
-        symbol: SymbolConfig,
-        timeframe: str,
-    ) -> list[Candle]:
-        now = self.exchange.current_time_ms()
-        candles = await self.exchange.fetch_klines(
-            symbol,
-            timeframe,
-            limit=HISTORY_BARS + 1,
-        )
-        completed = [
-            candle
-            for candle in candles
-            if candle.is_closed and candle.close_time < now
-        ]
-        return completed[-HISTORY_BARS:]
-
     async def _scan_if_ready(self, symbol: str, timeframe: str) -> None:
         candles = self.cache.get(symbol, timeframe)
-        if len(candles) != HISTORY_BARS:
+        if not self.window_policy.ready(timeframe, len(candles)):
             return
         if not candles_are_continuous(candles, timeframe):
             LOGGER.error("refusing non-continuous scan for %s %s", symbol, timeframe)

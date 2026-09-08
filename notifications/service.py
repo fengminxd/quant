@@ -5,36 +5,37 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, timezone
 
 from data.binance_futures import BinanceFuturesClient
+from data.candles import timeframe_to_milliseconds
 from data.market_config import MarketDataConfig, SymbolConfig
 from notifications.chart import render_notification_chart
-from notifications.config import NOTIFICATION_TIMEFRAMES, NotificationConfig
+from notifications.config import (
+    HISTORY_BARS,
+    NOTIFICATION_TIMEFRAMES,
+    NotificationConfig,
+    notification_window_is_ready,
+)
 from notifications.event_store import NotificationEventStore
 from notifications.health import StreamHealth, health_alert_text
 from notifications.reconciliation import CandleReconciler
+from notifications.schedule import (
+    latest_scan_boundary_ms,
+    next_scan_ms,
+    scheduled_timeframes,
+)
 from notifications.scanner import NotificationPatternScanner
 from notifications.telegram import TelegramClient
 
 
 LOGGER = logging.getLogger(__name__)
-HOUR_MS = 3_600_000
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 
 
-def next_hourly_scan_ms(now_ms: int, delay_seconds: float) -> int:
-    """Return the next UTC+8 whole-hour slot plus exchange-settlement delay."""
-
-    delay_ms = int(delay_seconds * 1_000)
-    adjusted = now_ms - delay_ms
-    boundary = ((adjusted + HOUR_MS - 1) // HOUR_MS) * HOUR_MS
-    return boundary + delay_ms
-
-
 class RealtimeNotificationService:
-    """Run hourly REST reconciliation plus independent Outbox delivery."""
+    """Run interval-aligned REST reconciliation and independent Outbox delivery."""
 
     def __init__(
         self,
@@ -53,12 +54,25 @@ class RealtimeNotificationService:
         self.scanner = scanner or NotificationPatternScanner()
         self.telegram = telegram or TelegramClient(config.telegram)
         self.event_store = event_store or NotificationEventStore(config.state_db)
+        configured = set(market.trading_timeframes)
+        self.notification_timeframes = tuple(
+            timeframe
+            for timeframe in NOTIFICATION_TIMEFRAMES
+            if timeframe in configured
+        )
+        if not self.notification_timeframes:
+            raise ValueError("at least one notification timeframe must be configured")
+        self.scan_interval_ms = min(
+            timeframe_to_milliseconds(value) for value in self.notification_timeframes
+        )
         self.reconciler = CandleReconciler(
             self.exchange,
             self.scanner,
             self.event_store,
             chart_renderer,
             max_restart_replay_bars=config.max_restart_replay_bars,
+            four_hour_history_bars=config.four_hour_history_bars,
+            timeframes=self.notification_timeframes,
         )
         self.cache = self.reconciler.cache
         self.active_symbols: tuple[SymbolConfig, ...] = ()
@@ -67,15 +81,26 @@ class RealtimeNotificationService:
         self._last_heartbeat = 0.0
 
     async def run_forever(self) -> None:
-        """Bootstrap, then supervise hourly scans and the Telegram Outbox."""
+        """Bootstrap, then supervise scheduled scans and the Telegram Outbox."""
 
         await self._deliver_pending()
         await self.bootstrap()
-        await self.reconcile_all(force_latest=True)
+        boundary_ms = latest_scan_boundary_ms(
+            self.exchange.current_time_ms(),
+            self.config.scan_delay_seconds,
+            self.scan_interval_ms,
+        )
+        await self.reconcile_all(
+            force_latest=True,
+            timeframes=scheduled_timeframes(
+                boundary_ms,
+                self.notification_timeframes,
+            ),
+        )
         await self._deliver_pending()
         await self._emit_health(force=True)
         tasks = (
-            asyncio.create_task(self._hourly_scan_loop()),
+            asyncio.create_task(self._scan_loop()),
             asyncio.create_task(self._outbox_loop()),
         )
         try:
@@ -92,7 +117,7 @@ class RealtimeNotificationService:
         self.active_symbols = await self._load_active_symbols()
         self.reconciler.register(self.active_symbols)
         for symbol in self.active_symbols:
-            for timeframe in NOTIFICATION_TIMEFRAMES:
+            for timeframe in self.notification_timeframes:
                 try:
                     await self.reconciler.warm(
                         symbol,
@@ -106,11 +131,19 @@ class RealtimeNotificationService:
                         timeframe,
                     )
 
-    async def reconcile_all(self, *, force_latest: bool = False) -> None:
-        """Retry failed warm-ups and repair every data stream."""
+    async def reconcile_all(
+        self,
+        *,
+        force_latest: bool = False,
+        timeframes: Sequence[str] | None = None,
+    ) -> None:
+        """Repair the requested timeframe streams for every active symbol."""
 
+        due_timeframes = tuple(
+            self.notification_timeframes if timeframes is None else timeframes
+        )
         for symbol in self.active_symbols:
-            for timeframe in NOTIFICATION_TIMEFRAMES:
+            for timeframe in due_timeframes:
                 try:
                     await self.reconciler.reconcile(
                         symbol,
@@ -125,19 +158,29 @@ class RealtimeNotificationService:
                     )
         await self._emit_health()
 
-    async def _hourly_scan_loop(self) -> None:
-        """Sleep until each UTC+8 whole hour, then run one REST scan."""
+    async def _scan_loop(self) -> None:
+        """Reconcile at the smallest configured notification interval."""
 
         while True:
             now_ms = self.exchange.current_time_ms()
-            target_ms = next_hourly_scan_ms(
+            target_ms = next_scan_ms(
                 now_ms,
                 self.config.scan_delay_seconds,
+                self.scan_interval_ms,
             )
             target = datetime.fromtimestamp(target_ms / 1_000, UTC_PLUS_8)
-            LOGGER.info("next notification scan at %s UTC+8", target.isoformat())
+            boundary_ms = target_ms - int(self.config.scan_delay_seconds * 1_000)
+            due_timeframes = scheduled_timeframes(
+                boundary_ms,
+                self.notification_timeframes,
+            )
+            LOGGER.info(
+                "next notification scan at %s UTC+8 timeframes=%s",
+                target.isoformat(),
+                ",".join(due_timeframes),
+            )
             await asyncio.sleep(max(0.0, (target_ms - now_ms) / 1_000))
-            await self.reconcile_all()
+            await self.reconcile_all(timeframes=due_timeframes)
             await asyncio.sleep(0.05)
 
     async def _outbox_loop(self) -> None:
@@ -195,7 +238,9 @@ class RealtimeNotificationService:
         )
         for status in statuses:
             alerting = (
-                status.candle_count != 201
+                not notification_window_is_ready(
+                    status.timeframe, status.candle_count
+                )
                 or not status.continuous
                 or status.lag_bars is None
                 or status.lag_bars >= self.config.data_lag_alert_bars

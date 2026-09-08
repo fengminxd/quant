@@ -9,8 +9,18 @@ from pathlib import Path
 from typing import Any
 
 
-NOTIFICATION_TIMEFRAMES = ("1h", "4h")
+NOTIFICATION_TIMEFRAMES = ("15m", "1h", "4h")
 HISTORY_BARS = 201
+
+
+def notification_window_is_ready(timeframe: str, candle_count: int) -> bool:
+    """Accept extended 4h history while retaining exact short-level windows."""
+
+    if timeframe not in NOTIFICATION_TIMEFRAMES:
+        return False
+    if timeframe == "4h":
+        return candle_count >= HISTORY_BARS
+    return candle_count == HISTORY_BARS
 
 
 @dataclass(frozen=True)
@@ -35,6 +45,7 @@ class NotificationConfig:
     delivery_retry_interval_seconds: float = 10.0
     data_lag_alert_bars: int = 1
     max_restart_replay_bars: int = 1_000
+    four_hour_history_bars: int = 401
 
 
 def load_notification_config(
@@ -71,8 +82,11 @@ def load_notification_config(
         raise ValueError("scan_delay_seconds must be between 5 and 10")
     lag_bars = int(payload.get("data_lag_alert_bars", 1))
     replay_bars = int(payload.get("max_restart_replay_bars", 1_000))
+    four_hour_bars = int(payload.get("four_hour_history_bars", 401))
     if lag_bars <= 0 or replay_bars <= 0:
         raise ValueError("lag and restart replay bar limits must be positive")
+    if four_hour_bars < HISTORY_BARS:
+        raise ValueError("four_hour_history_bars must be at least 201")
     return NotificationConfig(
         telegram=TelegramConfig(token, chat_id, retries, timeout),
         state_db=Path(str(payload.get("state_db", "logs/notifications/state.sqlite3"))),
@@ -80,6 +94,7 @@ def load_notification_config(
         **intervals,
         data_lag_alert_bars=lag_bars,
         max_restart_replay_bars=replay_bars,
+        four_hour_history_bars=four_hour_bars,
     )
 
 

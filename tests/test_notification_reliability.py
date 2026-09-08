@@ -6,16 +6,11 @@ from dataclasses import replace
 import pytest
 
 from data.candles import Candle, timeframe_to_milliseconds
-from data.market_config import MarketDataConfig, SymbolConfig
-from notifications.config import HISTORY_BARS, NotificationConfig, TelegramConfig
+from data.market_config import SymbolConfig
+from notifications.config import HISTORY_BARS
 from notifications.event_store import NotificationEventStore
 from notifications.health import candles_are_continuous, stream_health
 from notifications.reconciliation import CandleReconciler
-from notifications.service import (
-    HOUR_MS,
-    RealtimeNotificationService,
-    next_hourly_scan_ms,
-)
 
 
 SYMBOL = SymbolConfig("TEST", "TESTUSDT")
@@ -88,17 +83,6 @@ class RecordingScanner:
         return []
 
 
-class RecordingTelegram:
-    def __init__(self) -> None:
-        self.messages: list[str] = []
-
-    async def send_message(self, text: str) -> None:
-        self.messages.append(text)
-
-    async def send_photo(self, image, caption, *, filename) -> None:
-        return None
-
-
 def reconciler(tmp_path, exchange: FakeExchange, scanner: RecordingScanner):
     store = NotificationEventStore(tmp_path / "state.sqlite3")
     item = CandleReconciler(exchange, scanner, store, lambda *args: b"png")
@@ -119,20 +103,6 @@ def test_continuity_and_lag_require_exact_closed_intervals() -> None:
     )
 
 
-def test_hourly_scheduler_aligns_to_boundary_plus_settlement_delay() -> None:
-    delay_ms = 5_000
-
-    assert next_hourly_scan_ms(12 * HOUR_MS + 2_000, 5) == (
-        12 * HOUR_MS + delay_ms
-    )
-    assert next_hourly_scan_ms(12 * HOUR_MS + 6_000, 5) == (
-        13 * HOUR_MS + delay_ms
-    )
-    assert next_hourly_scan_ms(12 * HOUR_MS + delay_ms, 5) == (
-        12 * HOUR_MS + delay_ms
-    )
-
-
 def test_warmup_does_not_scan_and_same_4h_close_is_not_rescanned(tmp_path) -> None:
     interval = timeframe_to_milliseconds("4h")
     stored = candles("4h", HISTORY_BARS)
@@ -150,6 +120,27 @@ def test_warmup_does_not_scan_and_same_4h_close_is_not_rescanned(tmp_path) -> No
     assert scanner.calls == [
         ("4h", stored[-1].open_time),
         ("4h", stored[-1].open_time),
+    ]
+    store.close()
+
+
+def test_non_scanning_warmup_defers_restart_replay_to_scheduled_reconcile(
+    tmp_path,
+) -> None:
+    interval = timeframe_to_milliseconds("1h")
+    stored = candles("1h", HISTORY_BARS + 2)
+    exchange = FakeExchange(stored, len(stored) * interval + 1)
+    scanner = RecordingScanner()
+    item, store = reconciler(tmp_path, exchange, scanner)
+    store.mark_scanned("TEST", "1h", stored[HISTORY_BARS - 1].open_time)
+
+    asyncio.run(item.warm(SYMBOL, "1h", scan_latest=False))
+    assert scanner.calls == []
+
+    asyncio.run(item.reconcile(SYMBOL, "1h"))
+    assert scanner.calls == [
+        ("1h", stored[HISTORY_BARS].open_time),
+        ("1h", stored[HISTORY_BARS + 1].open_time),
     ]
     store.close()
 
@@ -217,29 +208,9 @@ def test_restart_replays_every_close_after_durable_scan_cursor(tmp_path) -> None
     store.close()
 
 
-def test_symbol_discovery_retries_transient_startup_failure(tmp_path) -> None:
-    exchange = FakeExchange([], 0)
-    exchange.discovery_failures = 1
-    store = NotificationEventStore(tmp_path / "state.sqlite3")
-    service = RealtimeNotificationService(
-        NotificationConfig(
-            TelegramConfig("token", "chat"),
-            bootstrap_retry_seconds=0.001,
-        ),
-        MarketDataConfig((SYMBOL,), ("1h", "4h"), HISTORY_BARS),
-        exchange=exchange,  # type: ignore[arg-type]
-        event_store=store,
-    )
-
-    active = asyncio.run(service._load_active_symbols())
-
-    assert active == (SYMBOL,)
-    store.close()
-
-
 @pytest.mark.parametrize(
     ("timeframe", "future_bars", "skip_every"),
-    [("1h", 72, 11), ("4h", 18, 5)],
+    [("15m", 288, 17), ("1h", 72, 11), ("4h", 18, 5)],
 )
 def test_accelerated_three_day_soak_keeps_exact_continuous_cache(
     tmp_path,
@@ -267,30 +238,25 @@ def test_accelerated_three_day_soak_keeps_exact_continuous_cache(
     store.close()
 
 
-def test_health_alerts_emit_once_then_emit_recovery(tmp_path) -> None:
-    one_hour = candles("1h", HISTORY_BARS)
-    four_hour = candles("4h", HISTORY_BARS)
-    now = HISTORY_BARS * timeframe_to_milliseconds("4h") + 1
-    exchange = FakeExchange([*one_hour, *four_hour], now)
-    telegram = RecordingTelegram()
-    store = NotificationEventStore(tmp_path / "state.sqlite3")
-    service = RealtimeNotificationService(
-        NotificationConfig(TelegramConfig("token", "chat")),
-        MarketDataConfig((SYMBOL,), ("1h", "4h"), HISTORY_BARS),
-        exchange=exchange,  # type: ignore[arg-type]
-        scanner=RecordingScanner(),  # type: ignore[arg-type]
-        telegram=telegram,  # type: ignore[arg-type]
-        event_store=store,
+def test_four_hour_cache_retains_more_than_201_without_promotion(tmp_path) -> None:
+    retained = HISTORY_BARS + 49
+    interval = timeframe_to_milliseconds("4h")
+    stored = candles("4h", retained)
+    exchange = FakeExchange(stored, retained * interval + 1)
+    scanner = RecordingScanner()
+    store = NotificationEventStore(tmp_path / "extended-4h.sqlite3")
+    item = CandleReconciler(
+        exchange,  # type: ignore[arg-type]
+        scanner,  # type: ignore[arg-type]
+        store,
+        lambda *args: b"png",
+        four_hour_history_bars=retained,
+        timeframes=("4h",),
     )
-    service.active_symbols = (SYMBOL,)
-    service.reconciler.register((SYMBOL,))
+    item.register((SYMBOL,))
 
-    asyncio.run(service._emit_health(force=True))
-    assert len(telegram.messages) == 2
-    service.reconciler.cache.replace("TEST", "1h", one_hour)
-    service.reconciler.cache.replace("TEST", "4h", four_hour)
-    asyncio.run(service._emit_health())
+    asyncio.run(item.warm(SYMBOL, "4h", scan_latest=True))
 
-    assert len(telegram.messages) == 3
-    assert "恢复" in telegram.messages[-1]
+    assert len(item.cache.get("TEST", "4h")) == retained
+    assert scanner.calls == [("4h", stored[-1].open_time)]
     store.close()

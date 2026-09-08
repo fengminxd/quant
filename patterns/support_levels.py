@@ -190,6 +190,27 @@ def first_accepted_breakout(
     )
 
 
+def first_accepted_breakout_before_retest(
+    data: Sequence[Bar],
+    start_index: int,
+    retest_index: int,
+    level: float,
+    *,
+    min_intervening_bars: int = 1,
+) -> int | None:
+    """Find a breakout separated from its retest by complete candles."""
+
+    if min_intervening_bars < 0:
+        raise ValueError("min_intervening_bars must be non-negative")
+    latest_breakout_index = retest_index - min_intervening_bars - 1
+    return first_accepted_breakout(
+        data,
+        start_index,
+        latest_breakout_index,
+        level,
+    )
+
+
 def post_breakout_closes_hold(
     data: Sequence[Bar],
     source_index: int,

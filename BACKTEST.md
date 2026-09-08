@@ -34,13 +34,16 @@ Head-and-shoulders entries use the right-shoulder zone, not the neckline.
 ## Barrier and OHLC Semantics
 
 - Scanning begins on the first closed candle after Pattern detection.
-- A candidate candle must overlap the structure zone and close back on the
-  trade side of the structure level.
-- Default zone width is 0.25 ATR, maximum close distance is 0.35 ATR, and the
+- A candidate candle must overlap the structure zone. A bullish entry uses the
+  candle-body low (`min(open, close)`) and requires it at or above the structure
+  level. A bearish entry uses the candle-body high (`max(open, close)`) and
+  requires it at or below the structure level.
+- Default zone width is 0.25 ATR, maximum body-edge distance is 0.35 ATR, and the
   standard setup expires after eleven waiting candles.
-- Entry price is the qualifying candle close; the geometry anchor remains
-  recorded as `structure_anchor`.
-- Outcome inspection begins on the next candle.
+- The qualifying candle is a signal candle. Entry occurs at the next candle's
+  open; if no next candle exists, no trade is created. The body edge is retained
+  as signal evidence and the geometry anchor remains `structure_anchor`.
+- Outcome inspection begins on the candle after the entry candle.
 - Default bullish stop/lock/final target: entry × 0.985 / entry × 1.015 /
   entry × 1.03.
 - Default bearish stop/lock/final target: entry × 1.015 / entry × 0.985 /
@@ -60,9 +63,10 @@ Head-and-shoulders entries use the right-shoulder zone, not the neckline.
 ## Causality Boundary
 
 Pattern geometry may still be confirmed after its historical structure
-anchor, but no entry is backfilled to that anchor. Every plan exposes the
-structure confirmation lag, `entry_wait_bars`, `entry_quality_score`, and
-`causal_at_entry`. Outcome inspection begins on the candle after entry.
+anchor, but no entry is backfilled to that anchor or the signal candle. Every
+plan exposes the signal candle, structure confirmation lag, `entry_wait_bars`,
+`entry_quality_score`, and `causal_at_entry`. Outcome inspection begins on the
+candle after entry.
 
 ## Cohorts
 

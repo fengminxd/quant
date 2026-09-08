@@ -3,17 +3,21 @@
 ## Scope
 
 `notifications/` is a research-alert subsystem isolated from trading, backtest,
-and report enablement. It scans the latest 201 closed candles on `1h` and `4h`
-for every enabled symbol in `config/symbols.json`.
+and report enablement. It scans `15m`, `1h`, and `4h` closed candles for every
+enabled symbol in `config/symbols.json`. The short levels retain exactly 201
+candles; `4h` retains `four_hour_history_bars` (default 401) and is never
+promoted to `1d` merely because its window contains more than 201 candles.
 
-The 201st candle is treated as an unconfirmed right-edge anchor. No right-side
+The latest candle is treated as an unconfirmed right-edge anchor. No right-side
 Pivot/Swing window is required for that final candle. Earlier structural
 anchors still use the existing confirmed Swing logic. Messages therefore
 describe early observations and are not Buy/Sell signals.
 
 ## Rules
 
-The notification scanner evaluates `PATTERN_002` through `PATTERN_008`.
+The notification scanner evaluates `PATTERN_002` through `PATTERN_008` on all
+configured timeframes. `PATTERN_009` is evaluated only on `4h`; it is skipped
+on `15m` and `1h`.
 `PATTERN_005`, `PATTERN_006`, and `PATTERN_008` are available inside this
 subsystem even though their existing trading/report policy remains unchanged.
 `FIXED_COMBO_006` is likewise evaluated only by the notification-specific
@@ -43,44 +47,47 @@ or, after installing the project entry points:
 pattern-notifications
 ```
 
-The process bootstraps 201 completed Binance USD-M futures candles per
-symbol/timeframe, immediately scans the latest completed window once, then
-sleeps until the next UTC+8 whole hour. Durable event identities prevent this
-startup scan from resending an event already delivered. The process does not
-subscribe to a continuously active WebSocket scan.
+The process bootstraps 201 completed Binance USD-M futures candles for `15m`
+and `1h`, and up to `four_hour_history_bars` candles for `4h`. At startup it
+reconciles only the timeframe levels due at the latest settled quarter-hour,
+then sleeps until the next boundary. Durable event identities prevent this
+startup reconciliation from resending an event already delivered. The process
+does not subscribe to a continuously active WebSocket scan.
 
-## Hourly Schedule
+## Interval Schedule
 
-At every UTC+8 whole hour, the service waits `scan_delay_seconds` (default:
-5 seconds) for the exchange to settle the just-closed candle and performs one
-REST reconciliation:
+When `15m` is configured, the service wakes at every UTC+8 quarter-hour. It
+waits `scan_delay_seconds` (default: 5 seconds) for exchange settlement and
+performs one REST reconciliation:
 
-- `1h` has one newly completed candle and is scanned once every hour.
-- `4h` is scanned only when its next Binance 4h candle has completed.
+- At minute `00`, `15m`, `1h`, and `4h` are reconciled.
+- At minutes `15`, `30`, and `45`, only `15m` is reconciled.
+- A `4h` check on a non-4h close does not rescan the previous candle.
 - If no new completed candle exists, the durable scan cursor prevents a repeat.
 
 `scan_delay_seconds` is restricted to 5–10 seconds. Values outside that range,
 including zero, are rejected during startup.
 
-The service remains under systemd supervision but is asleep between hourly
+The service remains under systemd supervision but is asleep between interval
 ticks. Telegram Outbox retries remain independent so a temporary delivery
 failure can recover without waiting for the next market scan.
 
 ## Production Reliability
 
-Binance REST is the scheduled source. At each hourly tick, an empty, short,
+Binance REST is the scheduled source. At each scheduled tick, an empty, short,
 discontinuous, or lagging cache is reloaded or backfilled. Missing
 closed candles are replayed in chronological order, so each repaired right
 edge is scanned rather than jumping directly to the newest candle.
 
 The last successfully scanned candle is also stored in SQLite. After a process
-or host restart, missed closes are rebuilt with their preceding 200-candle
+or host restart, missed closes are rebuilt with the timeframe-specific retained
 context and replayed in order. `max_restart_replay_bars` bounds this catch-up
 (default: 1000 closes); if the bound is exceeded, the service logs the cap and
 replays the most recent bounded range.
 
-Pattern detection is refused unless the cache contains exactly 201 closed,
-chronological, interval-continuous candles. Market discovery and failed
+Pattern detection is refused unless the cache contains the required closed,
+chronological, interval-continuous candles: exactly 201 for `15m`/`1h`, and at
+least 201 for `4h`. Market discovery and failed
 warm-ups are retried. Telegram delivery runs through a SQLite Outbox, so a
 Telegram outage does not block candle ingestion and pending images survive a
 process restart.
@@ -92,8 +99,8 @@ are configurable in `config/notifications.json`.
 
 ## Delivery and De-duplication
 
-Each match sends one PNG containing all 201 candles, Pattern lines, anchors,
-and UTC+8 anchor timestamps. Its caption includes symbol, Pattern rule,
+Each match sends one PNG containing the complete scan window, Pattern lines,
+anchors, and UTC+8 anchor timestamps. Its caption includes symbol, Pattern rule,
 timeframe, score, fixed-combination ID, and matched conditions.
 
 Successfully sent identities are persisted in

@@ -67,9 +67,29 @@ def test_standard_report_uses_first_post_detection_reclaim(
         PatternAnchor(index + 1, bars[index + 1].timestamp, 100.0)
         for index in range(count)
     )
-    close = 100.05 if direction == "bullish" else 99.95
+    candle_open = 100.05 if direction == "bullish" else 99.95
+    close = 100.10 if direction == "bullish" else 99.90
+    expected_signal = min(candle_open, close) if direction == "bullish" else max(
+        candle_open, close
+    )
     bars[6] = Bar(
-        bars[6].timestamp, 100.0, 100.4, 99.6, close, 1000.0, "1h"
+        bars[6].timestamp,
+        candle_open,
+        100.4,
+        99.6,
+        close,
+        1000.0,
+        "1h",
+    )
+    next_open = 101.0 if direction == "bullish" else 99.0
+    bars[7] = Bar(
+        bars[7].timestamp,
+        next_open,
+        next_open + 0.4,
+        next_open - 0.4,
+        next_open,
+        1000.0,
+        "1h",
     )
 
     plan = AnchorTradeOutcomeEvaluator().plan(
@@ -78,12 +98,60 @@ def test_standard_report_uses_first_post_detection_reclaim(
 
     assert plan is not None
     assert plan.structure_anchor == anchors[expected_position]
-    assert plan.entry_anchor.index == 6
-    assert plan.entry_price == close
+    assert plan.signal_anchor is not None
+    assert plan.signal_anchor.index == 6
+    assert plan.signal_anchor.price == expected_signal
+    assert plan.entry_anchor.index == 7
+    assert plan.entry_price == next_open
     assert plan.direction == direction
     assert plan.causal_at_entry is True
-    assert plan.entry_wait_bars == 1
+    assert plan.entry_wait_bars == 2
     assert plan.entry_quality_score is not None
+
+
+@pytest.mark.parametrize(
+    ("pattern_id", "candle_open", "close"),
+    [
+        ("PATTERN_004", 99.95, 100.05),
+        ("PATTERN_006", 100.05, 99.95),
+    ],
+)
+def test_close_only_reclaim_does_not_enter_when_body_crosses_structure(
+    pattern_id: str,
+    candle_open: float,
+    close: float,
+) -> None:
+    bars = flat_bars()
+    anchors = (
+        PatternAnchor(1, bars[1].timestamp, 100.0),
+        PatternAnchor(2, bars[2].timestamp, 100.0),
+    )
+    bars[6] = Bar(
+        bars[6].timestamp,
+        candle_open,
+        100.4,
+        99.6,
+        close,
+        1000.0,
+        "1h",
+    )
+    away = 105.0 if pattern_id == "PATTERN_004" else 95.0
+    for index in range(7, len(bars)):
+        bars[index] = Bar(
+            bars[index].timestamp,
+            away,
+            away + 0.4,
+            away - 0.4,
+            away,
+            1000.0,
+            "1h",
+        )
+
+    plan = AnchorTradeOutcomeEvaluator().plan(
+        event(pattern_id, anchors, bars, detected_index=5), bars
+    )
+
+    assert plan is None
 
 
 @pytest.mark.parametrize(
@@ -122,8 +190,8 @@ def test_head_shoulders_touch_without_right_shoulder_reclaim_does_not_enter(
     assert plan is None
 
 
-def test_standard_report_entry_may_occur_on_eleventh_waiting_bar() -> None:
-    bars = flat_bars(14)
+def test_standard_report_signal_may_occur_on_eleventh_waiting_bar() -> None:
+    bars = flat_bars(15)
     anchors = (
         PatternAnchor(0, bars[0].timestamp, 100.0),
         PatternAnchor(1, bars[1].timestamp, 100.0),
@@ -135,18 +203,24 @@ def test_standard_report_entry_may_occur_on_eleventh_waiting_bar() -> None:
     bars[13] = Bar(
         bars[13].timestamp, 100.0, 100.4, 99.6, 100.1, 1000.0, "1h"
     )
+    bars[14] = Bar(
+        bars[14].timestamp, 101.0, 101.4, 100.6, 101.0, 1000.0, "1h"
+    )
 
     plan = AnchorTradeOutcomeEvaluator().plan(
         event("PATTERN_004", anchors, bars, detected_index=2), bars
     )
 
     assert plan is not None
-    assert plan.entry_anchor.index == 13
-    assert plan.entry_wait_bars == 11
+    assert plan.signal_anchor is not None
+    assert plan.signal_anchor.index == 13
+    assert plan.entry_anchor.index == 14
+    assert plan.entry_price == 101.0
+    assert plan.entry_wait_bars == 12
 
 
 def test_standard_report_entry_expires_after_eleven_waiting_bars() -> None:
-    bars = flat_bars(15)
+    bars = flat_bars(16)
     anchors = (
         PatternAnchor(0, bars[0].timestamp, 100.0),
         PatternAnchor(1, bars[1].timestamp, 100.0),
@@ -157,6 +231,27 @@ def test_standard_report_entry_expires_after_eleven_waiting_bars() -> None:
         )
     bars[14] = Bar(
         bars[14].timestamp, 100.0, 100.4, 99.6, 100.1, 1000.0, "1h"
+    )
+
+    plan = AnchorTradeOutcomeEvaluator().plan(
+        event("PATTERN_004", anchors, bars, detected_index=2), bars
+    )
+
+    assert plan is None
+
+
+def test_standard_report_requires_a_bar_after_the_signal() -> None:
+    bars = flat_bars(14)
+    anchors = (
+        PatternAnchor(0, bars[0].timestamp, 100.0),
+        PatternAnchor(1, bars[1].timestamp, 100.0),
+    )
+    for index in range(3, 13):
+        bars[index] = Bar(
+            bars[index].timestamp, 105.0, 105.4, 104.6, 105.0, 1000.0, "1h"
+        )
+    bars[13] = Bar(
+        bars[13].timestamp, 100.0, 100.4, 99.6, 100.1, 1000.0, "1h"
     )
 
     plan = AnchorTradeOutcomeEvaluator().plan(
@@ -220,6 +315,16 @@ def test_triangle_freezes_trend_and_retests_directional_third_anchor(
         1000.0,
         "1h",
     )
+    next_open = level + 1.0 if side == "bullish" else level - 1.0
+    bars[152] = Bar(
+        bars[152].timestamp,
+        next_open,
+        next_open + 0.4,
+        next_open - 0.4,
+        next_open,
+        1000.0,
+        "1h",
+    )
     scan_event = PatternScanEvent(
         "BTC",
         "1h",
@@ -237,6 +342,9 @@ def test_triangle_freezes_trend_and_retests_directional_third_anchor(
     assert plan is not None
     assert plan.structure_anchor is not None
     assert plan.structure_anchor.index == structure_index
-    assert plan.entry_anchor.index == 151
+    assert plan.signal_anchor is not None
+    assert plan.signal_anchor.index == 151
+    assert plan.entry_anchor.index == 152
+    assert plan.entry_price == next_open
     assert plan.direction == side
     assert plan.trend_score is not None

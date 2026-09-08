@@ -71,8 +71,13 @@ class EntryRetestFeatureExtractor:
         bar = data[index]
         zone = atr * self.zone_width_atr
         overlaps = bar.low <= level + zone and bar.high >= level - zone
-        reclaimed = bar.close >= level if direction == "bullish" else bar.close <= level
-        distance_atr = abs(bar.close - level) / atr
+        body_price = entry_body_price(bar, direction)
+        reclaimed = (
+            body_price >= level
+            if direction == "bullish"
+            else body_price <= level
+        )
+        distance_atr = abs(body_price - level) / atr
         fresh = 1 <= age <= self.max_wait_bars
         visible_anchor = anchor_index is None or anchor_index <= index
         gate = (
@@ -88,6 +93,12 @@ class EntryRetestFeatureExtractor:
             "structure_retest": _feature("structure_retest", overlaps, confidence),
             "structure_reclaimed": _feature(
                 "structure_reclaimed", reclaimed, confidence
+            ),
+            "entry_body_price": FeatureResult(
+                "entry_body_price",
+                body_price,
+                confidence,
+                {"direction": direction},
             ),
             "entry_distance_atr": _feature(
                 "entry_distance_atr", distance_atr, confidence
@@ -272,6 +283,14 @@ def _line_value(left: tuple[int, float], right: tuple[int, float], index: int) -
         return right[1]
     slope = (right[1] - left[1]) / (right[0] - left[0])
     return left[1] + slope * (index - left[0])
+
+
+def entry_body_price(bar: Bar, direction: EntryDirection) -> float:
+    """Return the candle-body edge on the conservative entry side."""
+
+    if direction == "bullish":
+        return min(bar.open, bar.close)
+    return max(bar.open, bar.close)
 
 
 def _feature(

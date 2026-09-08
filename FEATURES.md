@@ -45,8 +45,10 @@ Reusable quantitative features shared by all patterns.
   triangle_span        Owning-cycle geometry           max(anchor)-min(anchor)
   structural_trade_plan Post-pattern execution geometry entry/stop/price-action target
   structure_retest     Entry-zone contact              candle range overlaps level ±0.25 ATR
-  structure_reclaim    Directional close acceptance    bullish close>=level; bearish close<=level
-  entry_distance_atr   Execution proximity             abs(close-structure level)/ATR
+  entry_body_price     Directional body acceptance     bullish min(open,close); bearish max(open,close)
+  structure_reclaim    Full-body acceptance             bullish body_low>=level; bearish body_high<=level
+  entry_distance_atr   Signal proximity                 abs(entry_body_price-structure level)/ATR
+  next_open_entry      Causal execution                  signal index + 1 candle open
   entry_wait_fresh     Setup validity                   bars since detection <= configured expiry
   gross_reward_risk    Unadjusted payoff geometry       reward distance/risk distance
   net_reward_risk      Executable payoff geometry       net reward/net risk after costs

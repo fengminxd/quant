@@ -18,7 +18,7 @@ def pattern_line_groups(
     """Return absolute-index straight lines without changing anchor extremes."""
 
     geometry = result.geometry
-    if result.pattern_id == "PATTERN_002":
+    if result.pattern_id in {"PATTERN_002", "PATTERN_009"}:
         return tuple(
             line
             for name in ("upper_line", "lower_line")

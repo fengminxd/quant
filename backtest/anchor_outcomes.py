@@ -35,6 +35,7 @@ class AnchorTradePlan:
     entry_quality_score: float | None = None
     lock_trigger_price: float | None = None
     locked_stop_price: float | None = None
+    signal_anchor: PatternAnchor | None = None
 
     @property
     def confirmation_delay_bars(self) -> int:
@@ -188,6 +189,7 @@ class AnchorTradeOutcomeEvaluator:
             entry_quality_score=resolved.entry_quality_score,
             lock_trigger_price=lock_trigger,
             locked_stop_price=lock_trigger,
+            signal_anchor=resolved.signal_anchor,
         )
 
     def evaluate_plan(

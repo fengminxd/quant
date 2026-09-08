@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 
-KNOWN_PATTERN_IDS = tuple(f"PATTERN_{number:03d}" for number in range(1, 9))
+KNOWN_PATTERN_IDS = tuple(f"PATTERN_{number:03d}" for number in range(1, 10))
 
 # Implementations remain available for research and direct detector tests.
 DISABLED_TRADING_PATTERN_IDS = frozenset(
-    {"PATTERN_001", "PATTERN_005", "PATTERN_008"}
+    {"PATTERN_001", "PATTERN_005", "PATTERN_008", "PATTERN_009"}
 )
 COMBINATION_ONLY_PATTERN_IDS = frozenset({"PATTERN_006"})
 DISABLED_FIXED_COMBINATION_IDS = frozenset({"FIXED_COMBO_006"})

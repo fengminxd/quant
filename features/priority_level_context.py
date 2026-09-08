@@ -13,7 +13,7 @@ from patterns.support_levels import (
     body_pierce_count,
     breakout_retest_contact,
     double_bottom_contact,
-    first_accepted_breakout,
+    first_accepted_breakout_before_retest,
     horizontal_resistance_contacts,
     post_breakout_closes_hold,
 )
@@ -113,8 +113,11 @@ class PriorityLevelContextMatcher:
             )
             if contact is None:
                 continue
-            breakout = first_accepted_breakout(
-                data, source.index + 1, target_index, contact.level
+            breakout = first_accepted_breakout_before_retest(
+                data,
+                source.index + 1,
+                target_index,
+                contact.level,
             )
             if breakout is None:
                 continue

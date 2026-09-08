@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from data.candles import Candle, timeframe_to_milliseconds
+from notifications.config import HISTORY_BARS, notification_window_is_ready
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class StreamHealth:
     @property
     def healthy(self) -> bool:
         return (
-            self.candle_count == 201
+            notification_window_is_ready(self.timeframe, self.candle_count)
             and self.lag_bars == 0
             and self.continuous
         )
@@ -81,7 +82,7 @@ def health_alert_text(status: StreamHealth, *, recovered: bool) -> str:
             f"Pattern通知数据{state}",
             f"symbol: {status.symbol}",
             f"周期: {status.timeframe}",
-            f"缓存K线: {status.candle_count}/201",
+            f"缓存K线: {status.candle_count}/至少{HISTORY_BARS}",
             f"延迟K线数: {lag}",
             f"连续性: {'正常' if status.continuous else '异常'}",
         )

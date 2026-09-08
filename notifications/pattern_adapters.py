@@ -12,6 +12,7 @@ from patterns import (
     HorizontalResistance,
     HorizontalSupport,
     InverseHeadShoulders,
+    ParallelChannel,
     ThreePointTrendlineResistance,
     ThreePointTrendlineSupport,
     Triangle,
@@ -110,7 +111,7 @@ class _StaticSwingDetector:
 
 
 def notification_patterns() -> tuple[object, ...]:
-    """Return PATTERN_002-008 without using central trading enablement."""
+    """Return fixed-window PATTERN_002-008 notification adapters."""
 
     triangle_swings = RightEdgeSwingDetector(
         left=2, right=2, min_bars=1, current_kinds=("high", "low")
@@ -133,6 +134,19 @@ def notification_patterns() -> tuple[object, ...]:
         CurrentHorizontalResistance(),
         CurrentInverseHeadShoulders(),
         CurrentHeadShouldersTop(),
+    )
+
+
+def notification_channel_patterns() -> tuple[object, ...]:
+    """Return extended-history PATTERN_009 notification adapters."""
+
+    channel_swings = RightEdgeSwingDetector(
+        left=2, right=2, min_bars=1, current_kinds=("high", "low")
+    )
+    return (
+        CurrentAnchorPattern(
+            ParallelChannel(swing_detector=channel_swings)  # type: ignore[arg-type]
+        ),
     )
 
 

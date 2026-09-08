@@ -127,13 +127,19 @@ class PatternTradeFeasibilityScorer:
         index = len(data) - 1 if as_of_index is None else as_of_index
         if index < 0 or index >= len(data):
             raise ValueError("as_of_index is outside supplied data")
-        window = data[: index + 1]
         entry_assessment = None
         entry_quality = None
-        if plan is None and pattern.detected and data[index].timeframe != "1d":
-            entry_atr = max(average_true_range(window)[-1], 1e-12)
+        signal_index = index - 1
+        if (
+            plan is None
+            and pattern.detected
+            and data[index].timeframe != "1d"
+            and signal_index >= 0
+        ):
+            signal_window = data[: signal_index + 1]
+            entry_atr = max(average_true_range(signal_window)[-1], 1e-12)
             entry_assessment = self.extractor.entry_extractor.extract(
-                pattern, window, index, entry_atr
+                pattern, signal_window, signal_index, entry_atr
             )
             entry_quality = self.entry_factor.calculate(entry_assessment.features)
         extracted, index, atr = self.extractor.extract(
@@ -162,6 +168,8 @@ class PatternTradeFeasibilityScorer:
             "funding_rate": self.costs.funding_rate,
             "stop_buffer_atr": self.extractor.stop_buffer_atr,
             "entry_index": extracted.entry_index if extracted else None,
+            "signal_index": extracted.signal_index if extracted else None,
+            "signal_price": extracted.signal_price if extracted else None,
             "entry_hypothesis": (
                 extracted.entry_source if extracted else "waiting_for_structure_retest"
             ),

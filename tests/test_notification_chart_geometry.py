@@ -41,6 +41,23 @@ def test_pattern_002_draws_fitted_boundaries_not_three_anchor_polylines() -> Non
     ]
 
 
+def test_pattern_009_draws_both_parallel_boundaries() -> None:
+    item = match(
+        "PATTERN_009",
+        {
+            "upper_points": [(5, 20.0), (25, 22.0)],
+            "lower_points": [(2, 10.0), (15, 11.3), (30, 12.8)],
+            "upper_line": {"start": (2, 19.7), "end": (30, 22.5)},
+            "lower_line": {"start": (2, 10.0), "end": (30, 12.8)},
+        },
+    )
+
+    assert line_coordinates(item) == [
+        ([2, 30], [19.7, 22.5]),
+        ([2, 30], [10.0, 12.8]),
+    ]
+
+
 def test_pattern_005_draws_one_endpoint_line_not_contact_polyline() -> None:
     item = match(
         "PATTERN_005",

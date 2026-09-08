@@ -31,6 +31,8 @@ class PatternTradePlan:
     entry_source: str = "explicit"
     structure_level: float | None = None
     entry_distance_atr: float | None = None
+    signal_index: int | None = None
+    signal_price: float | None = None
 
 
 class PatternTradePlanExtractor:
@@ -87,30 +89,39 @@ class PatternTradePlanExtractor:
                 plan, entry_index=index
             )
             return resolved, index, atr
+        signal_index = index - 1
+        if signal_index < 0:
+            return None, index, atr
+        signal_window = data[: signal_index + 1]
+        signal_atr = max(average_true_range(signal_window)[-1], 1e-12)
         assessment = entry_assessment or self.entry_extractor.extract(
-            pattern, window, index, atr
+            pattern, signal_window, signal_index, signal_atr
         )
         direction = assessment.direction
         if not assessment.eligible or direction is None:
-            return None, index, atr
+            return None, index, signal_atr
         extracted = self._default_plan(
             pattern,
-            window,
-            index,
-            atr,
+            signal_window,
+            signal_index,
+            signal_atr,
             direction,
             assessment,
+            data[index].open,
         )
         if extracted is not None and extracted.entry_index is None:
             distance = assessment.features.get("entry_distance_atr")
+            body_price = assessment.features.get("entry_body_price")
             extracted = replace(
                 extracted,
                 entry_index=index,
                 entry_source=assessment.structure_source,
                 structure_level=assessment.structure_level,
                 entry_distance_atr=distance.value if distance else None,
+                signal_index=signal_index,
+                signal_price=body_price.value if body_price else None,
             )
-        return extracted, index, atr
+        return extracted, index, signal_atr
 
     def _default_plan(
         self,
@@ -120,8 +131,8 @@ class PatternTradePlanExtractor:
         atr: float,
         direction: TradeDirection,
         assessment: EntryRetestAssessment,
+        entry: float,
     ) -> PatternTradePlan | None:
-        entry = data[index].close
         buffer = atr * self.stop_buffer_atr
         pattern_id = pattern.pattern_id
         if pattern_id in {"PATTERN_001", "PATTERN_003", "PATTERN_005"}:

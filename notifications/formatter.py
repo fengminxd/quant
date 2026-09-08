@@ -33,6 +33,6 @@ def telegram_caption(match: NotificationMatch, bars: Sequence[Bar]) -> str:
         f"组合条件: {conditions}",
         "锚点:",
         *anchor_lines,
-        "样本: 最近201根已收盘K线",
+        f"样本: 最近{len(bars)}根已收盘K线",
     ]
     return "\n".join(lines)[:1024]

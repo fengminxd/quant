@@ -9,7 +9,7 @@ from core.models import Bar, PatternResult
 from core.pattern_policy import is_trade_event_enabled
 from factors.entry_quality import EntryQualityScore
 from features.context import ContextFeatureExtractor, directional_structure_score
-from features.entry_retest import EntryRetestFeatureExtractor
+from features.entry_retest import EntryRetestFeatureExtractor, entry_body_price
 from features.trade_plan import TradeDirection
 from indicators.atr import average_true_range
 from research.pattern_events import PatternAnchor, PatternScanEvent
@@ -21,6 +21,7 @@ class CausalAnchorEntry:
 
     direction: TradeDirection
     structure_anchor: PatternAnchor
+    signal_anchor: PatternAnchor
     entry_anchor: PatternAnchor
     rule: str
     trend_score: float | None
@@ -44,7 +45,7 @@ class CausalAnchorEntryResolver:
         bars: Sequence[Bar],
         detected_index: int,
     ) -> CausalAnchorEntry | None:
-        """Return the first eligible close from detection through expiry."""
+        """Return the next-bar open after the first eligible body signal."""
 
         if not is_trade_event_enabled(
             event.pattern_id,
@@ -57,7 +58,7 @@ class CausalAnchorEntryResolver:
         direction, structure_anchor, rule, trend_score = definition
         pattern = _pattern_result(event, detected_index)
         final_index = min(
-            len(bars) - 1,
+            len(bars) - 2,
             detected_index + self.entry_extractor.max_wait_bars,
         )
         for index in range(detected_index + 1, final_index + 1):
@@ -69,12 +70,23 @@ class CausalAnchorEntryResolver:
             if not assessment.eligible or assessment.direction != direction:
                 continue
             quality = self.entry_factor.calculate(assessment.features)
-            entry = PatternAnchor(index, bars[index].timestamp, bars[index].close)
+            signal = PatternAnchor(
+                index,
+                bars[index].timestamp,
+                entry_body_price(bars[index], direction),
+            )
+            entry_index = index + 1
+            entry = PatternAnchor(
+                entry_index,
+                bars[entry_index].timestamp,
+                bars[entry_index].open,
+            )
             return CausalAnchorEntry(
                 direction,
                 structure_anchor,
+                signal,
                 entry,
-                f"{rule} zone retest and close reclaim",
+                f"{rule} zone retest and body reclaim; next-bar open entry",
                 trend_score,
                 quality.score,
             )

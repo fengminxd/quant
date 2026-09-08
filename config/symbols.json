@@ -5,6 +5,7 @@
   "symbols": [
     {"name": "BTC", "exchange_symbol": "BTCUSDT", "enabled": true},
     {"name": "ETH", "exchange_symbol": "ETHUSDT", "enabled": true},
+    {"name": "ENA", "exchange_symbol": "ENAUSDT", "enabled": true},
     {"name": "HYPE", "exchange_symbol": "HYPEUSDT", "enabled": true},
     {"name": "XAU", "exchange_symbol": "XAUUSDT", "enabled": true},
     {"name": "XAG", "exchange_symbol": "XAGUSDT", "enabled": true},
@@ -24,6 +25,7 @@
     {"name": "NEAR", "exchange_symbol": "NEARUSDT", "enabled": true},
     {"name": "AAVE", "exchange_symbol": "AAVEUSDT", "enabled": true},
     {"name": "XRP", "exchange_symbol": "XRPUSDT", "enabled": true},
+    {"name": "XPL", "exchange_symbol": "XPLUSDT", "enabled": true},
     {"name": "TAO", "exchange_symbol": "TAOUSDT", "enabled": true},
     {"name": "SOL", "exchange_symbol": "SOLUSDT", "enabled": true},
     {"name": "ONDO", "exchange_symbol": "ONDOUSDT", "enabled": true},

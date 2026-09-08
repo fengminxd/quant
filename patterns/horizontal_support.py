@@ -171,6 +171,15 @@ class HorizontalSupport(Pattern):
                 float(candidate.breakout_index if candidate.breakout_index is not None else -1),
                 1.0,
             ),
+            "breakout_retest_gap_bars": FeatureResult(
+                "breakout_retest_gap_bars",
+                float(
+                    right.index - candidate.breakout_index - 1
+                    if candidate.breakout_index is not None
+                    else -1
+                ),
+                1.0,
+            ),
             "retest_close_distance_atr": FeatureResult(
                 "retest_close_distance_atr",
                 (data[right.index].close - candidate.level) / atr,

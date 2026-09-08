@@ -75,7 +75,7 @@ class NotificationMatch:
 
 def _geometry_anchors(result: PatternResult) -> Iterable[NotificationAnchor]:
     geometry = result.geometry
-    if result.pattern_id == "PATTERN_002":
+    if result.pattern_id in {"PATTERN_002", "PATTERN_009"}:
         yield from _labeled_points(geometry.get("upper_points", ()), "U")
         yield from _labeled_points(geometry.get("lower_points", ()), "L")
         return

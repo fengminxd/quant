@@ -111,6 +111,42 @@ class ThreePointTrendlineResistanceScore(Factor):
         )
 
 
+class ParallelChannelScore(Factor):
+    """Score a parallel channel's structural quality without trade direction."""
+
+    def __init__(self, min_channel_span: int = 100) -> None:
+        if min_channel_span <= 0:
+            raise ValueError("min_channel_span must be positive")
+        self.min_channel_span = min_channel_span
+
+    def calculate(self, features: Mapping[str, FeatureResult]) -> FactorResult:
+        """Map confirmation, span, fit, parallelism, and containment to 0-100."""
+
+        lower_count = _value(features, "lower_anchor_count")
+        upper_count = _value(features, "upper_anchor_count")
+        anchor_score = clamp((lower_count + upper_count) / 7.0 * 100.0)
+        span_score = clamp(
+            _value(features, "channel_span") / self.min_channel_span * 100.0
+        )
+        fit_score = clamp(100.0 - _value(features, "fit_error_atr") * 100.0)
+        parallel_score = clamp(
+            100.0 - _value(features, "slope_difference_atr") * 100.0
+        )
+        containment_score = (
+            100.0 if _value(features, "body_violation_count") == 0.0 else 0.0
+        )
+        score = clamp(
+            0.25 * anchor_score
+            + 0.25 * span_score
+            + 0.20 * fit_score
+            + 0.20 * parallel_score
+            + 0.10 * containment_score
+        )
+        return FactorResult(
+            "ParallelChannelScore", round(score, 4), _feature_values(features)
+        )
+
+
 class HorizontalResistanceScore(Factor):
     """Score a two-anchor horizontal resistance without trading direction."""
 

@@ -50,8 +50,9 @@ with earlier confirmed swings from the shared Swing module:
   close/lower-shadow zones, minimum 40-bar span, no intervening body pierce,
   and all intermediate closes above support. ATR cannot bridge a contact gap.
 - Breakout-retest support requires a prior swing high, accepted close above
-  the shared traded-price level, and closes holding that level into the
-  explicit retest anchor. The prior open/upper-shadow zone must actually
+  the shared traded-price level, at least one complete candle between the
+  breakout and explicit retest anchor, and closes holding that level into the
+  retest. The prior open/upper-shadow zone must actually
   intersect the target close/lower-shadow zone; ATR cannot bridge a contact
   gap. Post-breakout holding uses a separate 0.1 ATR tolerance.
 - Horizontal resistance requires a shared open/upper-shadow level and no

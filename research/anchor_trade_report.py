@@ -117,13 +117,15 @@ def _report_header(
             "PATTERN_008 禁止交易和报告；FIXED_COMBO_006 全局禁用。"
         ),
         (
-            "- Pattern 确认后等待结构区回踩；K 线触及结构区并按方向重新"
-            "收回时，以该 K 线收盘价入场。"
+            "- Pattern 确认后等待结构区回踩；做多要求信号 K 线实体最低点"
+            "位于结构位上方，做空要求实体最高点位于结构位下方；统一在"
+            "下一根 K 线开盘价入场。"
         ),
         (
-            f"- 结构区宽度 {entry.zone_width_atr:.2f} ATR，收盘距结构位不超过 "
+            f"- 结构区宽度 {entry.zone_width_atr:.2f} ATR，"
+            "实体入场侧边界距结构位不超过 "
             f"{entry.max_close_distance_atr:.2f} ATR，最多等待 "
-            f"{entry.max_wait_bars} 根 K 线。"
+            f"{entry.max_wait_bars} 根信号 K 线；没有下一根 K 线则不入场。"
         ),
         "- 从入场 K 线后的下一根 K 线开始检查，不使用入场柱内未知路径。",
         (
@@ -216,6 +218,7 @@ def _outcome_line(outcome: AnchorTradeOutcome) -> str:
     lock_trigger = plan.lock_trigger_price or plan.entry_price
     locked_stop = plan.locked_stop_price or lock_trigger
     structure = plan.structure_anchor or plan.entry_anchor
+    signal = plan.signal_anchor or plan.entry_anchor
     return (
         f"symbol={event.symbol} timeframe={event.timeframe} "
         f"pattern={event.pattern_id} rule={event.rule} outcome={outcome.status} "
@@ -235,7 +238,9 @@ def _outcome_line(outcome: AnchorTradeOutcome) -> str:
         f"confirmation_delay_bars={plan.confirmation_delay_bars} "
         f"entry_wait_bars={plan.entry_wait_bars} "
         f"entry_quality={plan.entry_quality_score if plan.entry_quality_score is not None else '-'} "
-        f"causal_at_entry={plan.causal_at_entry}"
+        f"causal_at_entry={plan.causal_at_entry} "
+        f"signal_time={format_utc_plus_8(signal.timestamp)} "
+        f"signal_body_edge={signal.price:.8f}"
     )
 
 
@@ -249,5 +254,6 @@ def _excluded_line(event: PatternScanEvent) -> str:
         f"combo={event.priority_combination_id or '-'} "
         f"detected_time={format_utc_plus_8(event.detected_timestamp)} "
         f"anchors=[{anchors}] "
-        "reason=no eligible trend/anchor or no retest-and-reclaim before expiry"
+        "reason=no eligible trend/anchor, no body-reclaim signal before expiry, "
+        "or no next-bar open available"
     )

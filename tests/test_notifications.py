@@ -74,10 +74,16 @@ def test_config_resolves_telegram_secrets_from_environment(
     assert config.telegram.token == "secret-token"
     assert config.telegram.chat_id == "-100123"
     assert config.state_db == tmp_path / "state.sqlite3"
+    assert config.four_hour_history_bars == 401
     invalid = json.loads(path.read_text(encoding="utf-8"))
     invalid["scan_delay_seconds"] = 0
     path.write_text(json.dumps(invalid), encoding="utf-8")
     with pytest.raises(ValueError, match="between 5 and 10"):
+        load_notification_config(path)
+    invalid["scan_delay_seconds"] = 5
+    invalid["four_hour_history_bars"] = 200
+    path.write_text(json.dumps(invalid), encoding="utf-8")
+    with pytest.raises(ValueError, match="four_hour_history_bars"):
         load_notification_config(path)
 
 

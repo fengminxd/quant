@@ -15,15 +15,19 @@ from indicators.swing import Pivot
 def bars() -> list[Bar]:
     return [
         Bar(index, 15.0, 15.5, 14.5, 15.0, 1000.0, "4h")
-        for index in range(60)
+        for index in range(61)
     ]
 
 
 def retest_bars(level: float, direction: str) -> list[Bar]:
     source = bars()
     close = level + 0.05 if direction == "bullish" else level - 0.05
-    source[-1] = Bar(
+    source[-2] = Bar(
         59, level, level + 0.40, level - 0.40, close, 1000.0, "4h"
+    )
+    entry = level + 0.20 if direction == "bullish" else level - 0.20
+    source[-1] = Bar(
+        60, entry, entry + 0.40, entry - 0.40, entry, 1000.0, "4h"
     )
     return source
 
@@ -98,6 +102,10 @@ def test_line_and_horizontal_rules_require_retest_and_reclaim(
         return
     assert plan is not None
     assert plan.direction == direction
+    expected_entry = level + 0.20 if direction == "bullish" else level - 0.20
+    assert plan.entry_price == pytest.approx(expected_entry)
+    assert plan.signal_index == 59
+    assert plan.signal_price == pytest.approx(level)
     assert plan.target_source == "confirmed_swing_liquidity"
     assert plan.target_price == (20.0 if direction == "bullish" else 10.0)
     assert (plan.stop_price < plan.entry_price) == (stop_side == "below")

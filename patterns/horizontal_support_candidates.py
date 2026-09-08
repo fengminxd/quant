@@ -14,7 +14,7 @@ from patterns.support_levels import (
     body_pierce_count,
     breakout_retest_contact,
     double_bottom_contact,
-    first_accepted_breakout,
+    first_accepted_breakout_before_retest,
     post_breakout_closes_hold,
 )
 
@@ -131,8 +131,11 @@ class HorizontalSupportCandidateFinder:
                     self.price_epsilon,
                     atr_values[low.index] * self.breakout_hold_atr_tolerance_ratio,
                 )
-                breakout = first_accepted_breakout(
-                    data, high.index + 1, low.index, contact.level
+                breakout = first_accepted_breakout_before_retest(
+                    data,
+                    high.index + 1,
+                    low.index,
+                    contact.level,
                 )
                 if breakout is None:
                     continue
