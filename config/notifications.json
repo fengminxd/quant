@@ -9,8 +9,6 @@
   "scan_delay_seconds": 5,
   "heartbeat_interval_seconds": 300,
   "bootstrap_retry_seconds": 30,
-  "delivery_retry_interval_seconds": 10,
   "data_lag_alert_bars": 1,
-  "max_restart_replay_bars": 1000,
   "four_hour_history_bars": 401
 }

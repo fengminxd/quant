@@ -111,7 +111,7 @@ class _StaticSwingDetector:
 
 
 def notification_patterns() -> tuple[object, ...]:
-    """Return fixed-window PATTERN_002-008 notification adapters."""
+    """Return enabled PATTERN_002/003/004/007 notification adapters."""
 
     triangle_swings = RightEdgeSwingDetector(
         left=2, right=2, min_bars=1, current_kinds=("high", "low")
@@ -130,10 +130,7 @@ def notification_patterns() -> tuple[object, ...]:
         CurrentAnchorPattern(
             HorizontalSupport(swing_detector=support_lows)  # type: ignore[arg-type]
         ),
-        CurrentThreePointResistance(),
-        CurrentHorizontalResistance(),
         CurrentInverseHeadShoulders(),
-        CurrentHeadShouldersTop(),
     )
 
 

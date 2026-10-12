@@ -133,6 +133,12 @@ class NotificationEventStore:
         ).fetchall()
         return [PendingNotification(*row) for row in rows]
 
+    def discard_pending(self) -> None:
+        """Expire unsent payloads without recording them as delivered."""
+
+        with self.connection:
+            self.connection.execute("DELETE FROM notification_outbox")
+
     def pending_count(self) -> int:
         """Return the number of durable payloads awaiting Telegram."""
 

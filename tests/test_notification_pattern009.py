@@ -10,6 +10,8 @@ from notifications.config import (
     notification_window_is_ready,
 )
 from notifications.formatter import telegram_caption
+from notifications.models import NotificationMatch
+from notifications.pattern_adapters import notification_channel_patterns
 from notifications.scanner import NotificationPatternScanner
 from research.pattern_lines import pattern_line_groups
 from tests.test_near_4h_triangle import near_bars
@@ -38,18 +40,18 @@ def test_notification_levels_include_fifteen_minutes() -> None:
     assert NOTIFICATION_TIMEFRAMES == ("15m", "1h", "4h")
     assert notification_window_is_ready("15m", HISTORY_BARS)
     assert not notification_window_is_ready("15m", HISTORY_BARS + 1)
+    assert notification_window_is_ready("1h", HISTORY_BARS)
     assert notification_window_is_ready("4h", HISTORY_BARS + 100)
 
 
-def test_pattern_009_reaches_four_hour_notification_output_at_right_edge() -> None:
+def test_pattern_009_adapter_preserves_historical_notification_output() -> None:
     timeframe = "4h"
     length = 250
     bars = channel_bars(timeframe, length, (5, 100, 249), (50, 180))
 
-    match = next(
-        item
-        for item in NotificationPatternScanner().scan("TEST", timeframe, bars)
-        if item.pattern.pattern_id == "PATTERN_009"
+    match = NotificationMatch(
+        "TEST", timeframe, bars[-1].timestamp,
+        notification_channel_patterns()[0].detect(bars),
     )
 
     assert match.timeframe == timeframe
@@ -65,8 +67,8 @@ def test_pattern_009_reaches_four_hour_notification_output_at_right_edge() -> No
     assert f"样本: 最近{length}根已收盘K线" in telegram_caption(match, bars)
 
 
-@pytest.mark.parametrize("timeframe", ["15m", "1h"])
-def test_pattern_009_is_not_detected_on_short_timeframes(timeframe: str) -> None:
+@pytest.mark.parametrize("timeframe", ["15m", "1h", "4h"])
+def test_pattern_009_is_not_notified_on_any_timeframe(timeframe: str) -> None:
     bars = channel_bars(timeframe, 201, (5, 80, 200), (40, 150))
 
     matches = NotificationPatternScanner().scan("TEST", timeframe, bars)
@@ -76,10 +78,9 @@ def test_pattern_009_is_not_detected_on_short_timeframes(timeframe: str) -> None
 
 def test_extended_four_hour_channel_keeps_four_hour_geometry() -> None:
     bars = channel_bars("4h", 250, (5, 100, 249), (50, 180))
-    match = next(
-        item
-        for item in NotificationPatternScanner().scan("TEST", "4h", bars)
-        if item.pattern.pattern_id == "PATTERN_009"
+    match = NotificationMatch(
+        "TEST", "4h", bars[-1].timestamp,
+        notification_channel_patterns()[0].detect(bars),
     )
 
     assert match.timeframe == "4h"

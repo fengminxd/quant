@@ -10,6 +10,9 @@ from typing import Any
 
 
 NOTIFICATION_TIMEFRAMES = ("15m", "1h", "4h")
+NOTIFICATION_PATTERN_IDS = frozenset({
+    "PATTERN_002", "PATTERN_003", "PATTERN_004", "PATTERN_007",
+})
 HISTORY_BARS = 201
 
 
@@ -42,9 +45,7 @@ class NotificationConfig:
     scan_delay_seconds: float = 5.0
     heartbeat_interval_seconds: float = 300.0
     bootstrap_retry_seconds: float = 30.0
-    delivery_retry_interval_seconds: float = 10.0
     data_lag_alert_bars: int = 1
-    max_restart_replay_bars: int = 1_000
     four_hour_history_bars: int = 401
 
 
@@ -71,9 +72,6 @@ def load_notification_config(
         "bootstrap_retry_seconds": float(
             payload.get("bootstrap_retry_seconds", 30.0)
         ),
-        "delivery_retry_interval_seconds": float(
-            payload.get("delivery_retry_interval_seconds", 10.0)
-        ),
     }
     if any(value <= 0 for value in intervals.values()):
         raise ValueError("notification service intervals must be positive")
@@ -81,10 +79,9 @@ def load_notification_config(
     if not 5 <= scan_delay <= 10:
         raise ValueError("scan_delay_seconds must be between 5 and 10")
     lag_bars = int(payload.get("data_lag_alert_bars", 1))
-    replay_bars = int(payload.get("max_restart_replay_bars", 1_000))
     four_hour_bars = int(payload.get("four_hour_history_bars", 401))
-    if lag_bars <= 0 or replay_bars <= 0:
-        raise ValueError("lag and restart replay bar limits must be positive")
+    if lag_bars <= 0:
+        raise ValueError("data_lag_alert_bars must be positive")
     if four_hour_bars < HISTORY_BARS:
         raise ValueError("four_hour_history_bars must be at least 201")
     return NotificationConfig(
@@ -93,7 +90,6 @@ def load_notification_config(
         scan_delay_seconds=scan_delay,
         **intervals,
         data_lag_alert_bars=lag_bars,
-        max_restart_replay_bars=replay_bars,
         four_hour_history_bars=four_hour_bars,
     )
 

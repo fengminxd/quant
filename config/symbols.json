@@ -29,6 +29,9 @@
     {"name": "TAO", "exchange_symbol": "TAOUSDT", "enabled": true},
     {"name": "SOL", "exchange_symbol": "SOLUSDT", "enabled": true},
     {"name": "ONDO", "exchange_symbol": "ONDOUSDT", "enabled": true},
-    {"name": "MSTR", "exchange_symbol": "MSTRUSDT", "enabled": true}
+    {"name": "MSTR", "exchange_symbol": "MSTRUSDT", "enabled": true},
+    {"name": "ARB", "exchange_symbol": "ARBUSDT", "enabled": true},
+    {"name": "UNI", "exchange_symbol": "UNIUSDT", "enabled": true},
+    {"name": "STRK", "exchange_symbol": "STRKUSDT", "enabled": true}
   ]
 }

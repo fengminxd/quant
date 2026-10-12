@@ -87,14 +87,11 @@ def test_config_resolves_telegram_secrets_from_environment(
         load_notification_config(path)
 
 
-def test_notification_scanner_enables_unconfirmed_pattern_008_only_locally() -> None:
+def test_notification_scanner_excludes_pattern_008() -> None:
     bars = notification_window(top_bars())
 
     matches = NotificationPatternScanner().scan("TEST", "1h", bars)
-    top = next(match for match in matches if match.pattern.pattern_id == "PATTERN_008")
-
-    assert top.anchors[2].label == "RS"
-    assert top.anchors[2].index == HISTORY_BARS - 1
+    assert all(match.pattern.pattern_id != "PATTERN_008" for match in matches)
     assert "PATTERN_008" in DISABLED_TRADING_PATTERN_IDS
 
 
@@ -129,7 +126,7 @@ def test_notification_scanner_requires_exactly_201_bars() -> None:
         ("PATTERN_006", "1h", horizontal_resistance_bars()[:46]),
     ],
 )
-def test_notification_scanner_covers_pattern_002_through_006_at_right_edge(
+def test_notification_scanner_filters_patterns_at_right_edge(
     pattern_id: str,
     timeframe: str,
     visible: list[Bar],
@@ -137,6 +134,9 @@ def test_notification_scanner_covers_pattern_002_through_006_at_right_edge(
     bars = pad_to_window(visible)
 
     matches = NotificationPatternScanner().scan("TEST", timeframe, bars)
+    if pattern_id in {"PATTERN_005", "PATTERN_006"}:
+        assert all(item.pattern.pattern_id != pattern_id for item in matches)
+        return
     match = next(item for item in matches if item.pattern.pattern_id == pattern_id)
 
     assert any(anchor.index == HISTORY_BARS - 1 for anchor in match.anchors)
@@ -179,11 +179,11 @@ def test_notification_priority_scorer_can_evaluate_disabled_combo_006() -> None:
 
 
 def test_chart_and_caption_include_required_notification_information() -> None:
-    bars = notification_window(top_bars())
+    bars = notification_window(pattern_bars())
     match = next(
         item
         for item in NotificationPatternScanner().scan("TEST", "1h", bars)
-        if item.pattern.pattern_id == "PATTERN_008"
+        if item.pattern.pattern_id == "PATTERN_007"
     )
 
     image = render_notification_chart(match, bars)
@@ -192,7 +192,7 @@ def test_chart_and_caption_include_required_notification_information() -> None:
     assert image.startswith(b"\x89PNG\r\n\x1a\n")
     assert len(image) > 10_000
     assert "symbol: TEST" in caption
-    assert "PATTERN_008" in caption
+    assert "PATTERN_007" in caption
     assert "周期: 1h" in caption
     assert "UTC+8" in caption
     assert "FIXED_COMBO:" in caption
@@ -262,7 +262,11 @@ class _TelegramRecorder:
 
 
 @pytest.mark.parametrize("fail", [False, True])
-def test_service_delivers_or_retains_durable_outbox(tmp_path, fail: bool) -> None:
+@pytest.mark.parametrize("timeframe", ["15m", "1h", "4h"])
+@pytest.mark.parametrize("pattern_number", range(2, 10))
+def test_delivery_attempt_filters_current_batch_payloads(
+    tmp_path, fail: bool, timeframe: str, pattern_number: int,
+) -> None:
     bars = notification_window(pattern_bars())
     match = next(
         item
@@ -270,6 +274,9 @@ def test_service_delivers_or_retains_durable_outbox(tmp_path, fail: bool) -> Non
         if item.pattern.pattern_id == "PATTERN_007"
     )
     store = NotificationEventStore(tmp_path / "service.sqlite3")
+    match = replace(match, timeframe=timeframe, pattern=replace(
+        match.pattern, pattern_id=f"PATTERN_{pattern_number:03d}",
+    ))
     store.enqueue(match, filename="pattern.png", caption="caption", image=b"png")
     telegram = _TelegramRecorder(fail)
     config = NotificationConfig(
@@ -278,14 +285,15 @@ def test_service_delivers_or_retains_durable_outbox(tmp_path, fail: bool) -> Non
     )
     service = RealtimeNotificationService(
         config,
-        MarketDataConfig((), ("1h", "4h"), HISTORY_BARS),
+        MarketDataConfig((), ("15m", "1h", "4h"), HISTORY_BARS),
         telegram=telegram,  # type: ignore[arg-type]
         event_store=store,
     )
 
-    asyncio.run(service._deliver_pending())
+    asyncio.run(service._deliver_pending(deadline_ms=service.exchange.current_time_ms() + 10_000))
 
-    assert len(telegram.calls) == 1
-    assert len(store.pending()) == int(fail)
+    allowed = pattern_number in {2, 3, 4, 7}
+    assert len(telegram.calls) == int(allowed)
+    assert len(store.pending()) == int(fail or not allowed)
     assert store.contains(match.identity) is True
     store.close()

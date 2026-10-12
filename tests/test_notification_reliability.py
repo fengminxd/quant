@@ -68,6 +68,7 @@ class FakeExchange:
             candle
             for candle in self.stored
             if candle.timeframe == timeframe
+            and candle.open_time <= self.now_ms
             and (start_time is None or candle.open_time >= start_time)
             and (end_time is None or candle.open_time <= end_time)
         ]
@@ -124,7 +125,7 @@ def test_warmup_does_not_scan_and_same_4h_close_is_not_rescanned(tmp_path) -> No
     store.close()
 
 
-def test_non_scanning_warmup_defers_restart_replay_to_scheduled_reconcile(
+def test_warmup_then_scheduled_reconcile_skips_restart_history(
     tmp_path,
 ) -> None:
     interval = timeframe_to_milliseconds("1h")
@@ -139,13 +140,12 @@ def test_non_scanning_warmup_defers_restart_replay_to_scheduled_reconcile(
 
     asyncio.run(item.reconcile(SYMBOL, "1h"))
     assert scanner.calls == [
-        ("1h", stored[HISTORY_BARS].open_time),
         ("1h", stored[HISTORY_BARS + 1].open_time),
     ]
     store.close()
 
 
-def test_stream_gap_is_repaired_and_each_missing_close_is_replayed(tmp_path) -> None:
+def test_stream_gap_repairs_context_but_scans_only_latest_close(tmp_path) -> None:
     interval = timeframe_to_milliseconds("1h")
     stored = candles("1h", HISTORY_BARS + 2)
     exchange = FakeExchange(stored, (HISTORY_BARS + 2) * interval + 1)
@@ -159,10 +159,9 @@ def test_stream_gap_is_repaired_and_each_missing_close_is_replayed(tmp_path) -> 
     assert candles_are_continuous(cached, "1h")
     assert cached[-1].open_time == stored[-1].open_time
     assert scanner.calls == [
-        ("1h", stored[-2].open_time),
         ("1h", stored[-1].open_time),
     ]
-    assert exchange.fetch_calls[-1][1] == stored[-2].open_time
+    assert exchange.fetch_calls[-1][1] is None
     store.close()
 
 
@@ -183,7 +182,7 @@ def test_failed_warmup_is_retried_by_reconciliation(tmp_path) -> None:
     store.close()
 
 
-def test_restart_replays_every_close_after_durable_scan_cursor(tmp_path) -> None:
+def test_restart_skips_closes_after_durable_scan_cursor(tmp_path) -> None:
     interval = timeframe_to_milliseconds("1h")
     stored = candles("1h", HISTORY_BARS + 5)
     exchange = FakeExchange(stored, len(stored) * interval + 1)
@@ -197,10 +196,7 @@ def test_restart_replays_every_close_after_durable_scan_cursor(tmp_path) -> None
         asyncio.run(item.warm(SYMBOL, "1h", scan_latest=True))
     asyncio.run(item.reconcile(SYMBOL, "1h"))
 
-    expected = [
-        ("1h", candle.open_time)
-        for candle in stored[HISTORY_BARS:]
-    ]
+    expected = [("1h", stored[-1].open_time)]
     assert scanner.calls == expected
     assert store.last_scanned_open_time("TEST", "1h") == stored[-1].open_time
     assert len(item.cache.get("TEST", "1h")) == HISTORY_BARS
@@ -210,7 +206,7 @@ def test_restart_replays_every_close_after_durable_scan_cursor(tmp_path) -> None
 
 @pytest.mark.parametrize(
     ("timeframe", "future_bars", "skip_every"),
-    [("15m", 288, 17), ("1h", 72, 11), ("4h", 18, 5)],
+    [("1h", 72, 11), ("4h", 18, 5)],
 )
 def test_accelerated_three_day_soak_keeps_exact_continuous_cache(
     tmp_path,
@@ -226,13 +222,14 @@ def test_accelerated_three_day_soak_keeps_exact_continuous_cache(
     item.cache.replace("TEST", timeframe, stored[:HISTORY_BARS])
 
     for offset, candle in enumerate(stored[HISTORY_BARS:], start=1):
+        exchange.now_ms = candle.close_time + 2
         if offset % skip_every:
             asyncio.run(item.process(candle))
 
     cached = item.cache.get("TEST", timeframe)
     assert len(cached) == HISTORY_BARS
     assert candles_are_continuous(cached, timeframe)
-    assert len(scanner.calls) == future_bars
+    assert len(scanner.calls) == future_bars - future_bars // skip_every
     assert cached[-1].open_time == stored[-1].open_time
     assert store.pending_count() == 0
     store.close()

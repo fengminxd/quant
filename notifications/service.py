@@ -13,16 +13,16 @@ from data.candles import timeframe_to_milliseconds
 from data.market_config import MarketDataConfig, SymbolConfig
 from notifications.chart import render_notification_chart
 from notifications.config import (
-    HISTORY_BARS,
+    NOTIFICATION_PATTERN_IDS,
     NOTIFICATION_TIMEFRAMES,
     NotificationConfig,
     notification_window_is_ready,
 )
 from notifications.event_store import NotificationEventStore
 from notifications.health import StreamHealth, health_alert_text
+from notifications.policy import notification_timeframe_enabled
 from notifications.reconciliation import CandleReconciler
 from notifications.schedule import (
-    latest_scan_boundary_ms,
     next_scan_ms,
     scheduled_timeframes,
 )
@@ -35,7 +35,7 @@ UTC_PLUS_8 = timezone(timedelta(hours=8))
 
 
 class RealtimeNotificationService:
-    """Run interval-aligned REST reconciliation and independent Outbox delivery."""
+    """Scan and deliver current alerts only within scheduled runs."""
 
     def __init__(
         self,
@@ -59,6 +59,10 @@ class RealtimeNotificationService:
             timeframe
             for timeframe in NOTIFICATION_TIMEFRAMES
             if timeframe in configured
+            and (not market.enabled_symbols or any(
+                notification_timeframe_enabled(symbol.name, timeframe)
+                for symbol in market.enabled_symbols
+            ))
         )
         if not self.notification_timeframes:
             raise ValueError("at least one notification timeframe must be configured")
@@ -70,45 +74,23 @@ class RealtimeNotificationService:
             self.scanner,
             self.event_store,
             chart_renderer,
-            max_restart_replay_bars=config.max_restart_replay_bars,
             four_hour_history_bars=config.four_hour_history_bars,
             timeframes=self.notification_timeframes,
         )
         self.cache = self.reconciler.cache
         self.active_symbols: tuple[SymbolConfig, ...] = ()
-        self._delivery_lock = asyncio.Lock()
         self._unhealthy: set[tuple[str, str]] = set()
         self._last_heartbeat = 0.0
 
     async def run_forever(self) -> None:
-        """Bootstrap, then supervise scheduled scans and the Telegram Outbox."""
+        """Warm data silently, then wait for the next scheduled scan."""
 
-        await self._deliver_pending()
-        await self.bootstrap()
-        boundary_ms = latest_scan_boundary_ms(
-            self.exchange.current_time_ms(),
-            self.config.scan_delay_seconds,
-            self.scan_interval_ms,
-        )
-        await self.reconcile_all(
-            force_latest=True,
-            timeframes=scheduled_timeframes(
-                boundary_ms,
-                self.notification_timeframes,
-            ),
-        )
-        await self._deliver_pending()
-        await self._emit_health(force=True)
-        tasks = (
-            asyncio.create_task(self._scan_loop()),
-            asyncio.create_task(self._outbox_loop()),
-        )
         try:
-            await asyncio.gather(*tasks)
+            self.event_store.discard_pending()
+            await self.bootstrap()
+            await self._scan_loop()
         finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            self.event_store.discard_pending()
             self.event_store.close()
 
     async def bootstrap(self) -> None:
@@ -118,6 +100,8 @@ class RealtimeNotificationService:
         self.reconciler.register(self.active_symbols)
         for symbol in self.active_symbols:
             for timeframe in self.notification_timeframes:
+                if not notification_timeframe_enabled(symbol.name, timeframe):
+                    continue
                 try:
                     await self.reconciler.warm(
                         symbol,
@@ -126,9 +110,7 @@ class RealtimeNotificationService:
                     )
                 except Exception:
                     LOGGER.exception(
-                        "bootstrap pending retry for %s %s",
-                        symbol.name,
-                        timeframe,
+                        "bootstrap pending retry for %s %s", symbol.name, timeframe,
                     )
 
     async def reconcile_all(
@@ -136,19 +118,27 @@ class RealtimeNotificationService:
         *,
         force_latest: bool = False,
         timeframes: Sequence[str] | None = None,
+        boundary_ms: int | None = None,
     ) -> None:
         """Repair the requested timeframe streams for every active symbol."""
 
         due_timeframes = tuple(
-            self.notification_timeframes if timeframes is None else timeframes
+            timeframe
+            for timeframe in (
+                self.notification_timeframes if timeframes is None else timeframes
+            )
+            if timeframe in self.notification_timeframes
         )
         for symbol in self.active_symbols:
             for timeframe in due_timeframes:
+                if not notification_timeframe_enabled(symbol.name, timeframe):
+                    continue
                 try:
                     await self.reconciler.reconcile(
                         symbol,
                         timeframe,
                         force_latest=force_latest,
+                        boundary_ms=boundary_ms,
                     )
                 except Exception:
                     LOGGER.exception(
@@ -156,7 +146,6 @@ class RealtimeNotificationService:
                         symbol.name,
                         timeframe,
                     )
-        await self._emit_health()
 
     async def _scan_loop(self) -> None:
         """Reconcile at the smallest configured notification interval."""
@@ -180,13 +169,38 @@ class RealtimeNotificationService:
                 ",".join(due_timeframes),
             )
             await asyncio.sleep(max(0.0, (target_ms - now_ms) / 1_000))
-            await self.reconcile_all(timeframes=due_timeframes)
+            if self.exchange.current_time_ms() - target_ms > 10_000:
+                LOGGER.warning("skipping missed notification slot %s", target.isoformat())
+                continue
+            await self._run_scheduled_scan(boundary_ms, due_timeframes)
             await asyncio.sleep(0.05)
 
-    async def _outbox_loop(self) -> None:
-        while True:
-            await asyncio.sleep(self.config.delivery_retry_interval_seconds)
-            await self._deliver_pending()
+    async def _run_scheduled_scan(
+        self, boundary_ms: int, timeframes: Sequence[str],
+    ) -> None:
+        """Expire old payloads and bound this batch by the next scan slot."""
+
+        deadline_ms = (
+            boundary_ms + int(self.config.scan_delay_seconds * 1_000)
+            + self.scan_interval_ms
+        )
+        self.event_store.discard_pending()
+        try:
+            remaining = (deadline_ms - self.exchange.current_time_ms()) / 1_000
+            if remaining <= 0:
+                return
+            await asyncio.wait_for(
+                self.reconcile_all(timeframes=timeframes, boundary_ms=boundary_ms),
+                timeout=remaining,
+            )
+            await self._deliver_pending(deadline_ms=deadline_ms)
+            remaining = (deadline_ms - self.exchange.current_time_ms()) / 1_000
+            if remaining > 0:
+                await asyncio.wait_for(self._emit_health(), timeout=remaining)
+        except asyncio.TimeoutError:
+            LOGGER.warning("notification slot expired; dropping unsent alerts")
+        finally:
+            self.event_store.discard_pending()
 
     async def _load_active_symbols(self) -> tuple[SymbolConfig, ...]:
         if not self.market.enabled_symbols:
@@ -205,31 +219,36 @@ class RealtimeNotificationService:
                 LOGGER.exception("market discovery failed; retrying")
                 await asyncio.sleep(self.config.bootstrap_retry_seconds)
 
-    async def _deliver_pending(self) -> None:
-        async with self._delivery_lock:
-            for item in self.event_store.pending():
-                try:
-                    await self.telegram.send_photo(
-                        item.image,
-                        item.caption,
-                        filename=item.filename,
-                    )
-                except RuntimeError as error:
-                    LOGGER.warning(
-                        "Telegram remains pending for %s %s %s: %s",
-                        item.symbol,
-                        item.timeframe,
-                        item.pattern_id,
-                        error,
-                    )
-                    continue
-                self.event_store.mark_pending_sent(item)
-                LOGGER.info(
-                    "sent %s %s %s",
+    async def _deliver_pending(self, *, deadline_ms: int) -> None:
+        for item in self.event_store.pending():
+            remaining = (deadline_ms - self.exchange.current_time_ms()) / 1_000
+            if remaining <= 0:
+                return
+            # Only this scheduled batch survives the initial outbox expiry.
+            if (
+                item.timeframe not in self.notification_timeframes
+                or item.pattern_id not in NOTIFICATION_PATTERN_IDS
+                or not notification_timeframe_enabled(item.symbol, item.timeframe)
+            ):
+                continue
+            try:
+                await asyncio.wait_for(
+                    self.telegram.send_photo(
+                        item.image, item.caption, filename=item.filename,
+                    ),
+                    timeout=remaining,
+                )
+            except RuntimeError as error:
+                LOGGER.warning(
+                    "Telegram alert dropped after this scan for %s %s %s: %s",
                     item.symbol,
                     item.timeframe,
                     item.pattern_id,
+                    error,
                 )
+                continue
+            self.event_store.mark_pending_sent(item)
+            LOGGER.info("sent %s %s %s", item.symbol, item.timeframe, item.pattern_id)
 
     async def _emit_health(self, *, force: bool = False) -> None:
         statuses = self.reconciler.statuses(

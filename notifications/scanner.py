@@ -10,18 +10,14 @@ from factors.priority_combinations import PriorityFixedCombinationScore
 from features.priority_combinations import PriorityCombinationFeatureExtractor
 from notifications.config import (
     HISTORY_BARS,
+    NOTIFICATION_PATTERN_IDS,
     NOTIFICATION_TIMEFRAMES,
     notification_window_is_ready,
 )
 from notifications.models import NotificationMatch
-from notifications.pattern_adapters import (
-    notification_channel_patterns,
-    notification_patterns,
-)
+from notifications.policy import notification_timeframe_enabled
+from notifications.pattern_adapters import notification_patterns
 from patterns.detector import PatternDetector
-
-
-_PATTERN_009_TIMEFRAMES = frozenset({"4h"})
 
 
 class NotificationPriorityScorer:
@@ -55,7 +51,7 @@ class NotificationPriorityScorer:
 
 
 class NotificationPatternScanner:
-    """Detect notification patterns, with PATTERN_009 restricted to 4h."""
+    """Detect enabled notification patterns on the latest closed candle."""
 
     def __init__(
         self,
@@ -64,8 +60,6 @@ class NotificationPatternScanner:
     ) -> None:
         selected = notification_patterns() if patterns is None else patterns
         self.detector = PatternDetector(selected)  # type: ignore[arg-type]
-        extended = notification_channel_patterns() if patterns is None else ()
-        self.extended_detector = PatternDetector(extended)  # type: ignore[arg-type]
         self.priority_scorer = priority_scorer or NotificationPriorityScorer()
 
     def scan(
@@ -78,6 +72,8 @@ class NotificationPatternScanner:
 
         if timeframe not in NOTIFICATION_TIMEFRAMES:
             raise ValueError(f"notification timeframe must be one of {NOTIFICATION_TIMEFRAMES}")
+        if not notification_timeframe_enabled(symbol, timeframe):
+            return []
         if not notification_window_is_ready(timeframe, len(bars)):
             raise ValueError(
                 "notification scan requires exactly 201 bars for 15m/1h "
@@ -93,16 +89,8 @@ class NotificationPatternScanner:
             _shift_result(result, offset)
             for result in self.detector.detect(fixed_window)
         ]
-        extended_results = (
-            self.extended_detector.detect(bars)
-            if timeframe in _PATTERN_009_TIMEFRAMES
-            else ()
-        )
-        for result in (*fixed_results, *extended_results):
-            if (
-                result.pattern_id == "PATTERN_009"
-                and timeframe not in _PATTERN_009_TIMEFRAMES
-            ):
+        for result in fixed_results:
+            if result.pattern_id not in NOTIFICATION_PATTERN_IDS:
                 continue
             if not result.detected or not _uses_right_edge(result, last_index):
                 continue

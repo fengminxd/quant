@@ -13,7 +13,7 @@ from notifications.service import RealtimeNotificationService
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Scan closed 15m/1h/4h candles and notify Telegram"
+        description="Scan closed 15m/1h/4h candles (TradeFi: 1h/4h) and notify Telegram"
     )
     parser.add_argument(
         "--notifications-config",

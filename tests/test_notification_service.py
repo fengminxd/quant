@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 from data.candles import Candle, timeframe_to_milliseconds
 from data.market_config import MarketDataConfig, SymbolConfig
@@ -100,7 +100,7 @@ def test_symbol_discovery_retries_transient_startup_failure(tmp_path) -> None:
     service.event_store.close()
 
 
-def test_service_uses_15m_schedule_and_extended_4h_window(tmp_path) -> None:
+def test_service_includes_15m_and_uses_quarter_hour_schedule(tmp_path) -> None:
     service = RealtimeNotificationService(
         NotificationConfig(
             TelegramConfig("token", "chat"),
@@ -113,6 +113,7 @@ def test_service_uses_15m_schedule_and_extended_4h_window(tmp_path) -> None:
     )
 
     assert service.notification_timeframes == ("15m", "1h", "4h")
+    assert service.reconciler.timeframes == ("15m", "1h", "4h")
     assert service.scan_interval_ms == timeframe_to_milliseconds("15m")
     assert service.reconciler.window_policy.history_bars("4h") == 350
     service.event_store.close()
@@ -125,9 +126,12 @@ def test_reconcile_all_only_calls_due_timeframes(tmp_path) -> None:
     service.reconciler.reconcile = reconcile
     service._emit_health = AsyncMock()
 
-    asyncio.run(service.reconcile_all(timeframes=("15m",)))
+    asyncio.run(service.reconcile_all(timeframes=("15m", "1h")))
 
-    reconcile.assert_awaited_once_with(SYMBOL, "15m", force_latest=False)
+    assert reconcile.await_args_list == [
+        call(SYMBOL, "15m", force_latest=False, boundary_ms=None),
+        call(SYMBOL, "1h", force_latest=False, boundary_ms=None),
+    ]
     service.event_store.close()
 
 
